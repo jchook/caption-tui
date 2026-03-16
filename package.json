@@ -1,0 +1,23 @@
+{
+  "name": "caption-tool",
+  "version": "1.0.0",
+  "description": "Fast image captioning TUI with autocomplete",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "bin": {
+    "caption": "./index.ts"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/react": "^19.2.14"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "ink": "^6.8.0",
+    "ink-text-input": "^6.0.0",
+    "react": "^19.2.4"
+  }
+}
