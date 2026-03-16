@@ -9,6 +9,7 @@ interface ImageListProps {
   onEdit: (index: number) => void;
   maxVisible?: number;
   disabled?: boolean;
+  compact?: boolean;
 }
 
 function getTagColor(count: number): string {
@@ -29,6 +30,7 @@ export function ImageList({
   onEdit,
   maxVisible = 15,
   disabled = false,
+  compact = false,
 }: ImageListProps) {
   useInput(
     (input, key) => {
@@ -53,12 +55,14 @@ export function ImageList({
 
   return (
     <Box flexDirection="column">
-      <Box marginBottom={1}>
-        <Text bold color="cyan">
-          Images ({entries.length})
-        </Text>
-        <Text dimColor> - Use ↑↓/jk to navigate, Enter to edit</Text>
-      </Box>
+      {!compact && (
+        <Box marginBottom={1}>
+          <Text bold color="cyan">
+            Images ({entries.length})
+          </Text>
+          <Text dimColor> - Use ↑↓/jk to navigate, Enter to edit</Text>
+        </Box>
+      )}
 
       {visibleEntries.map((entry, i) => {
         const actualIndex = startIndex + i;
@@ -69,13 +73,13 @@ export function ImageList({
 
         return (
           <Box key={entry.name}>
-            <Text inverse={isSelected}>
+            <Text inverse={isSelected} dimColor={!isSelected && compact}>
               {isSelected ? "▸ " : "  "}
             </Text>
-            <Text inverse={isSelected} bold={isSelected}>
+            <Text inverse={isSelected} bold={isSelected} dimColor={!isSelected && compact}>
               {entry.name.padEnd(30)}
             </Text>
-            <Text color={tagColor} inverse={isSelected}>
+            <Text color={tagColor} inverse={isSelected} dimColor={!isSelected && compact}>
               [{tagCount.toString().padStart(2)}]
             </Text>
             <Text dimColor={!isSelected} inverse={isSelected}>
@@ -86,7 +90,7 @@ export function ImageList({
         );
       })}
 
-      {entries.length > maxVisible && (
+      {!compact && entries.length > maxVisible && (
         <Box marginTop={1}>
           <Text dimColor>
             Showing {startIndex + 1}-{Math.min(startIndex + maxVisible, entries.length)} of{" "}

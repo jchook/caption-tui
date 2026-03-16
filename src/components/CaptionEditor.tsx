@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { Box, Text, useInput } from "ink";
 import type { ImageEntry } from "../utils/dataset.js";
-import { getTagSuggestions, formatTags } from "../utils/dataset.js";
+import { getTagSuggestions } from "../utils/dataset.js";
 
 interface CaptionEditorProps {
   entry: ImageEntry;
@@ -24,6 +24,7 @@ export function CaptionEditor({
   const [currentInput, setCurrentInput] = useState("");
   const [selectedSuggestion, setSelectedSuggestion] = useState(0);
   const [cursorPosition, setCursorPosition] = useState(0);
+
 
   // Reset state when entry changes
   useEffect(() => {
@@ -174,13 +175,12 @@ export function CaptionEditor({
     <Box flexDirection="column" borderStyle="single" borderColor="cyan" paddingX={1}>
       <Box marginBottom={1}>
         <Text bold color="cyan">
-          Editing: {entry.name}
+          {entry.name}
         </Text>
-        <Text dimColor> - Enter/Tab: add tag, ↑↓: nav images, Esc: close</Text>
+        <Text dimColor> - Enter/Tab: add, ↑↓: nav, Esc: close</Text>
       </Box>
 
-      {/* Current tags display */}
-      <Box flexWrap="wrap" marginBottom={1}>
+      <Box flexWrap="wrap">
         <Text dimColor>Tags: </Text>
         {tags.map((tag, i) => (
           <React.Fragment key={`tag-${i}-${tag}`}>
@@ -188,26 +188,24 @@ export function CaptionEditor({
             <Text dimColor>, </Text>
           </React.Fragment>
         ))}
-        {/* Input area with ghost text */}
         <Text>{currentInput}</Text>
         <Text dimColor>{ghostText}</Text>
         <Text inverse> </Text>
       </Box>
 
-      {/* Suggestions dropdown */}
       {suggestions.length > 0 && currentInput && (
-        <Box flexDirection="column" marginTop={1}>
-          <Text dimColor>Suggestions (↑↓ to select, Tab to accept):</Text>
-          {suggestions.slice(0, 5).map((suggestion, i) => (
-            <Box key={`suggestion-${i}-${suggestion}`}>
+        <Box marginTop={1}>
+          <Text dimColor>Suggestions: </Text>
+          {suggestions.slice(0, 8).map((suggestion, i) => (
+            <React.Fragment key={`suggestion-${i}-${suggestion}`}>
               <Text
                 inverse={i === selectedSuggestion}
                 color={i === selectedSuggestion ? "cyan" : undefined}
               >
-                {i === selectedSuggestion ? "▸ " : "  "}
                 {suggestion}
               </Text>
-            </Box>
+              <Text dimColor> </Text>
+            </React.Fragment>
           ))}
         </Box>
       )}

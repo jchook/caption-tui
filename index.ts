@@ -18,9 +18,6 @@ Arguments:
   path-to-dataset   Path to folder containing images (.png, .jpg, .jpeg)
                     and their caption files (.txt)
 
-Environment:
-  CAPTION_VIEWER    Image viewer command (default: qimgv)
-
 Controls (list mode):
   ↑/↓ or j/k       Navigate image list
   Enter            Edit selected image's caption
@@ -34,6 +31,7 @@ Controls (edit mode):
   Esc              Close editor (saves changes)
 
 Tags are stored in {imagename}.txt files as comma-separated values.
+Supports Kitty, iTerm2, Sixel, and fallback rendering for inline image preview.
 `);
   process.exit(0);
 }

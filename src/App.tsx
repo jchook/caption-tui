@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { Box, Text, useApp, useInput } from "ink";
+import Image, { TerminalInfoProvider } from "ink-picture";
 import { ImageList } from "./components/ImageList.js";
 import { CaptionEditor } from "./components/CaptionEditor.js";
 import {
@@ -8,7 +9,6 @@ import {
   collectAllTags,
   type ImageEntry,
 } from "./utils/dataset.js";
-import { openImage, closeCurrentImage } from "./utils/process.js";
 
 interface AppProps {
   datasetPath: string;
@@ -38,18 +38,17 @@ export function App({ datasetPath }: AppProps) {
   }, [datasetPath]);
 
   // Handle quit
-  useInput((input, key) => {
+  useInput((input) => {
     if (input === "q" && editingIndex === null) {
-      closeCurrentImage().then(() => exit());
+      exit();
     }
   });
 
   const handleEdit = useCallback(
-    async (index: number) => {
+    (index: number) => {
       const entry = entries[index];
       if (!entry) return;
       setEditingIndex(index);
-      await openImage(entry.imagePath);
     },
     [entries]
   );
@@ -82,7 +81,7 @@ export function App({ datasetPath }: AppProps) {
     [editingIndex, entries]
   );
 
-  const handleNext = useCallback(async () => {
+  const handleNext = useCallback(() => {
     if (editingIndex === null) return;
 
     const nextIndex = editingIndex + 1;
@@ -90,15 +89,12 @@ export function App({ datasetPath }: AppProps) {
     if (nextEntry) {
       setSelectedIndex(nextIndex);
       setEditingIndex(nextIndex);
-      await openImage(nextEntry.imagePath);
     } else {
-      // No more images, close editor
-      await closeCurrentImage();
       setEditingIndex(null);
     }
   }, [editingIndex, entries]);
 
-  const handlePrev = useCallback(async () => {
+  const handlePrev = useCallback(() => {
     if (editingIndex === null) return;
 
     const prevIndex = editingIndex - 1;
@@ -106,13 +102,10 @@ export function App({ datasetPath }: AppProps) {
     if (prevEntry) {
       setSelectedIndex(prevIndex);
       setEditingIndex(prevIndex);
-      await openImage(prevEntry.imagePath);
     }
-    // At first image, do nothing
   }, [editingIndex, entries]);
 
-  const handleClose = useCallback(async () => {
-    await closeCurrentImage();
+  const handleClose = useCallback(() => {
     setEditingIndex(null);
   }, []);
 
@@ -143,31 +136,32 @@ export function App({ datasetPath }: AppProps) {
   const isEditing = editingIndex !== null;
 
   return (
-    <Box flexDirection="column" height="100%">
-      {/* Header */}
-      <Box marginBottom={1}>
-        <Text bold color="magenta">
-          Caption Tool
-        </Text>
-        <Text dimColor> - {datasetPath}</Text>
-        <Text dimColor> | q to quit</Text>
-      </Box>
+    <TerminalInfoProvider>
+      <Box flexDirection="column" height="100%">
+        {/* Image list */}
+        <Box flexGrow={isEditing ? 0 : 1} flexDirection="column">
+          <ImageList
+            entries={entries}
+            selectedIndex={selectedIndex}
+            onSelect={setSelectedIndex}
+            onEdit={handleEdit}
+            maxVisible={isEditing ? 3 : 20}
+            disabled={isEditing}
+            compact={isEditing}
+          />
+        </Box>
 
-      {/* Image list (takes available space) */}
-      <Box flexGrow={isEditing ? 0 : 1} flexDirection="column">
-        <ImageList
-          entries={entries}
-          selectedIndex={selectedIndex}
-          onSelect={setSelectedIndex}
-          onEdit={handleEdit}
-          maxVisible={isEditing ? 8 : 20}
-          disabled={isEditing}
-        />
-      </Box>
+        {/* Image preview - rendered at top level */}
+        {isEditing && entries[editingIndex] && (
+          <Box height={40} width="100%">
+            <Image
+              src={entries[editingIndex]!.imagePath}
+            />
+          </Box>
+        )}
 
-      {/* Caption editor (shown when editing) */}
-      {isEditing && entries[editingIndex] && (
-        <Box marginTop={1}>
+        {/* Caption editor (shown when editing) */}
+        {isEditing && entries[editingIndex] && (
           <CaptionEditor
             entry={entries[editingIndex]!}
             allTags={allTags}
@@ -176,8 +170,8 @@ export function App({ datasetPath }: AppProps) {
             onPrev={handlePrev}
             onClose={handleClose}
           />
-        </Box>
-      )}
-    </Box>
+        )}
+      </Box>
+    </TerminalInfoProvider>
   );
 }
