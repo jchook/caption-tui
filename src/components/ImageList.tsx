@@ -1,4 +1,3 @@
-import React from "react";
 import { Box, Text, useInput } from "ink";
 import type { ImageEntry } from "../utils/dataset.js";
 
@@ -20,7 +19,7 @@ function getTagColor(count: number): string {
 
 function truncate(str: string, maxLen: number): string {
   if (str.length <= maxLen) return str;
-  return str.slice(0, maxLen - 3) + "...";
+  return `${str.slice(0, maxLen - 3)}...`;
 }
 
 export function ImageList({

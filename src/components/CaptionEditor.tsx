@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback } from "react";
 import { Box, Text, useInput } from "ink";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import type { ImageEntry } from "../utils/dataset.js";
 import { getTagSuggestions } from "../utils/dataset.js";
 
@@ -31,7 +31,7 @@ export function CaptionEditor({
     setCurrentInput("");
     setCursorPosition(0);
     setSelectedSuggestion(0);
-  }, [entry.name]);
+  }, [entry]);
 
   const suggestions = getTagSuggestions(allTags, currentInput, tags);
   const topSuggestion = suggestions[0] || "";
@@ -56,7 +56,8 @@ export function CaptionEditor({
 
   const acceptSuggestion = useCallback(() => {
     if (suggestions.length > 0) {
-      const suggestion = suggestions[selectedSuggestion] ?? suggestions[0]!;
+      const suggestion =
+        suggestions[selectedSuggestion] ?? suggestions[0] ?? "";
       setTags([...tags, suggestion]);
       setCurrentInput("");
       setCursorPosition(0);
@@ -189,11 +190,11 @@ export function CaptionEditor({
 
       <Box flexWrap="wrap">
         <Text dimColor>Tags: </Text>
-        {tags.map((tag, i) => (
-          <React.Fragment key={`tag-${i}-${tag}`}>
+        {tags.map((tag) => (
+          <Fragment key={tag}>
             <Text color="green">{tag}</Text>
             <Text dimColor>, </Text>
-          </React.Fragment>
+          </Fragment>
         ))}
         <Text>{currentInput}</Text>
         <Text dimColor>{ghostText}</Text>
@@ -204,7 +205,7 @@ export function CaptionEditor({
         <Box marginTop={1}>
           <Text dimColor>Suggestions: </Text>
           {suggestions.slice(0, 8).map((suggestion, i) => (
-            <React.Fragment key={`suggestion-${i}-${suggestion}`}>
+            <Fragment key={suggestion}>
               <Text
                 inverse={i === selectedSuggestion}
                 color={i === selectedSuggestion ? "cyan" : undefined}
@@ -212,7 +213,7 @@ export function CaptionEditor({
                 {suggestion}
               </Text>
               <Text dimColor> </Text>
-            </React.Fragment>
+            </Fragment>
           ))}
         </Box>
       )}

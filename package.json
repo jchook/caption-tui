@@ -7,6 +7,16 @@
   "bin": {
     "caption-tui": "./index.ts"
   },
+  "files": [
+    "index.ts",
+    "src"
+  ],
+  "scripts": {
+    "format": "biome format --write .",
+    "lint": "biome lint --write .",
+    "check": "biome check --write .",
+    "prepack": "biome check --write ."
+  },
   "keywords": [
     "caption",
     "image",
@@ -14,9 +24,13 @@
     "dataset",
     "tui",
     "cli",
-    "autocomplete"
+    "autocomplete",
+    "bun"
   ],
   "license": "MIT",
+  "engines": {
+    "bun": ">=1.0.0"
+  },
   "devDependencies": {
     "@biomejs/biome": "2.4.7",
     "@types/bun": "latest",

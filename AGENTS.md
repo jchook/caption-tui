@@ -22,8 +22,10 @@ CLI tool for managing image caption files (used for training image models). Give
 
 ## Install
 
+Requires [Bun](https://bun.sh) >= 1.0.0
+
 ```bash
-npm install -g caption-tui
+bun install -g caption-tui
 ```
 
 ## Usage

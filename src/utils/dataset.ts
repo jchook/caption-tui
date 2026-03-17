@@ -1,5 +1,5 @@
 import { readdir } from "node:fs/promises";
-import { join, basename, extname } from "node:path";
+import { basename, extname, join } from "node:path";
 
 const IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg"];
 

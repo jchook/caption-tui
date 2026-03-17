@@ -1,13 +1,13 @@
-import React, { useState, useEffect, useCallback } from "react";
 import { Box, Text, useApp, useInput } from "ink";
 import Image, { TerminalInfoProvider } from "ink-picture";
-import { ImageList } from "./components/ImageList.js";
+import { useCallback, useEffect, useState } from "react";
 import { CaptionEditor } from "./components/CaptionEditor.js";
+import { ImageList } from "./components/ImageList.js";
 import {
-  loadDataset,
-  saveTags,
   collectAllTags,
   type ImageEntry,
+  loadDataset,
+  saveTags,
 } from "./utils/dataset.js";
 
 interface AppProps {
@@ -154,14 +154,14 @@ export function App({ datasetPath }: AppProps) {
         {/* Image preview - rendered at top level */}
         {isEditing && entries[editingIndex] && (
           <Box height={40} width="100%">
-            <Image src={entries[editingIndex]!.imagePath} />
+            <Image src={entries[editingIndex]?.imagePath ?? ""} />
           </Box>
         )}
 
         {/* Caption editor (shown when editing) */}
         {isEditing && entries[editingIndex] && (
           <CaptionEditor
-            entry={entries[editingIndex]!}
+            entry={entries[editingIndex]}
             allTags={allTags}
             onSave={handleSave}
             onNext={handleNext}

@@ -1,9 +1,9 @@
 #!/usr/bin/env bun
 
-import React from "react";
-import { render } from "ink";
-import { App } from "./src/App.js";
 import { resolve } from "node:path";
+import { render } from "ink";
+import React from "react";
+import { App } from "./src/App.js";
 
 const args = process.argv.slice(2);
 
@@ -36,6 +36,6 @@ Supports Kitty, iTerm2, Sixel, and fallback rendering for inline image preview.
   process.exit(0);
 }
 
-const datasetPath = resolve(args[0]!);
+const datasetPath = resolve(args[0] ?? ".");
 
 render(React.createElement(App, { datasetPath }));
