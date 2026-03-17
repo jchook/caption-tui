@@ -25,7 +25,6 @@ export function CaptionEditor({
   const [selectedSuggestion, setSelectedSuggestion] = useState(0);
   const [cursorPosition, setCursorPosition] = useState(0);
 
-
   // Reset state when entry changes
   useEffect(() => {
     setTags(entry.tags);
@@ -67,7 +66,10 @@ export function CaptionEditor({
 
   const addCurrentTag = useCallback(() => {
     const trimmed = currentInput.trim();
-    if (trimmed && !tags.map((t) => t.toLowerCase()).includes(trimmed.toLowerCase())) {
+    if (
+      trimmed &&
+      !tags.map((t) => t.toLowerCase()).includes(trimmed.toLowerCase())
+    ) {
       setTags([...tags, trimmed]);
       setCurrentInput("");
       setCursorPosition(0);
@@ -108,7 +110,7 @@ export function CaptionEditor({
       if (cursorPosition > 0) {
         setCurrentInput(
           currentInput.slice(0, cursorPosition - 1) +
-            currentInput.slice(cursorPosition)
+            currentInput.slice(cursorPosition),
         );
         setCursorPosition(cursorPosition - 1);
       } else {
@@ -130,7 +132,7 @@ export function CaptionEditor({
     if (key.downArrow) {
       if (suggestions.length > 0 && currentInput) {
         setSelectedSuggestion(
-          Math.min(suggestions.length - 1, selectedSuggestion + 1)
+          Math.min(suggestions.length - 1, selectedSuggestion + 1),
         );
       } else {
         saveAndNext();
@@ -164,7 +166,7 @@ export function CaptionEditor({
       setCurrentInput(
         currentInput.slice(0, cursorPosition) +
           input +
-          currentInput.slice(cursorPosition)
+          currentInput.slice(cursorPosition),
       );
       setCursorPosition(cursorPosition + input.length);
       setSelectedSuggestion(0);
@@ -172,7 +174,12 @@ export function CaptionEditor({
   });
 
   return (
-    <Box flexDirection="column" borderStyle="single" borderColor="cyan" paddingX={1}>
+    <Box
+      flexDirection="column"
+      borderStyle="single"
+      borderColor="cyan"
+      paddingX={1}
+    >
       <Box marginBottom={1}>
         <Text bold color="cyan">
           {entry.name}

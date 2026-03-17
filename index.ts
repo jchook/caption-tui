@@ -9,10 +9,10 @@ const args = process.argv.slice(2);
 
 if (args.length === 0 || args.includes("--help") || args.includes("-h")) {
   console.log(`
-Caption Tool - Fast image captioning with autocomplete
+caption-tui - Fast image captioning with autocomplete
 
 Usage:
-  caption <path-to-dataset>
+  caption-tui <path-to-dataset>
 
 Arguments:
   path-to-dataset   Path to folder containing images (.png, .jpg, .jpeg)

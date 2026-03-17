@@ -13,7 +13,7 @@ export interface ImageEntry {
 export async function loadDataset(dirPath: string): Promise<ImageEntry[]> {
   const files = await readdir(dirPath);
   const imageFiles = files.filter((f) =>
-    IMAGE_EXTENSIONS.includes(extname(f).toLowerCase())
+    IMAGE_EXTENSIONS.includes(extname(f).toLowerCase()),
   );
 
   const entries: ImageEntry[] = [];
@@ -54,7 +54,7 @@ export function formatTags(tags: string[]): string {
 
 export async function saveTags(
   captionPath: string,
-  tags: string[]
+  tags: string[],
 ): Promise<void> {
   await Bun.write(captionPath, formatTags(tags));
 }
@@ -72,7 +72,7 @@ export function collectAllTags(entries: ImageEntry[]): Set<string> {
 export function getTagSuggestions(
   allTags: Set<string>,
   currentInput: string,
-  existingTags: string[]
+  existingTags: string[],
 ): string[] {
   const input = currentInput.toLowerCase().trim();
   if (!input) return [];

@@ -44,12 +44,15 @@ export function ImageList({
         onEdit(selectedIndex);
       }
     },
-    { isActive: !disabled }
+    { isActive: !disabled },
   );
 
   const startIndex = Math.max(
     0,
-    Math.min(selectedIndex - Math.floor(maxVisible / 2), entries.length - maxVisible)
+    Math.min(
+      selectedIndex - Math.floor(maxVisible / 2),
+      entries.length - maxVisible,
+    ),
   );
   const visibleEntries = entries.slice(startIndex, startIndex + maxVisible);
 
@@ -69,17 +72,26 @@ export function ImageList({
         const isSelected = actualIndex === selectedIndex;
         const tagCount = entry.tags.length;
         const tagColor = getTagColor(tagCount);
-        const tagPreview = entry.tags.length > 0 ? entry.tags.join(", ") : "(no tags)";
+        const tagPreview =
+          entry.tags.length > 0 ? entry.tags.join(", ") : "(no tags)";
 
         return (
           <Box key={entry.name}>
             <Text inverse={isSelected} dimColor={!isSelected && compact}>
               {isSelected ? "▸ " : "  "}
             </Text>
-            <Text inverse={isSelected} bold={isSelected} dimColor={!isSelected && compact}>
+            <Text
+              inverse={isSelected}
+              bold={isSelected}
+              dimColor={!isSelected && compact}
+            >
               {entry.name.padEnd(30)}
             </Text>
-            <Text color={tagColor} inverse={isSelected} dimColor={!isSelected && compact}>
+            <Text
+              color={tagColor}
+              inverse={isSelected}
+              dimColor={!isSelected && compact}
+            >
               [{tagCount.toString().padStart(2)}]
             </Text>
             <Text dimColor={!isSelected} inverse={isSelected}>
@@ -93,7 +105,8 @@ export function ImageList({
       {!compact && entries.length > maxVisible && (
         <Box marginTop={1}>
           <Text dimColor>
-            Showing {startIndex + 1}-{Math.min(startIndex + maxVisible, entries.length)} of{" "}
+            Showing {startIndex + 1}-
+            {Math.min(startIndex + maxVisible, entries.length)} of{" "}
             {entries.length}
           </Text>
         </Box>

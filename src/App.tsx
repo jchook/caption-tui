@@ -50,7 +50,7 @@ export function App({ datasetPath }: AppProps) {
       if (!entry) return;
       setEditingIndex(index);
     },
-    [entries]
+    [entries],
   );
 
   const handleSave = useCallback(
@@ -78,7 +78,7 @@ export function App({ datasetPath }: AppProps) {
         return newSet;
       });
     },
-    [editingIndex, entries]
+    [editingIndex, entries],
   );
 
   const handleNext = useCallback(() => {
@@ -154,9 +154,7 @@ export function App({ datasetPath }: AppProps) {
         {/* Image preview - rendered at top level */}
         {isEditing && entries[editingIndex] && (
           <Box height={40} width="100%">
-            <Image
-              src={entries[editingIndex]!.imagePath}
-            />
+            <Image src={entries[editingIndex]!.imagePath} />
           </Box>
         )}
 
