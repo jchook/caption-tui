@@ -3,6 +3,7 @@ import Image, { TerminalInfoProvider } from "ink-picture";
 import { useCallback, useEffect, useState } from "react";
 import { CaptionEditor } from "./components/CaptionEditor.js";
 import { ImageList } from "./components/ImageList.js";
+import { useTerminalSize } from "./hooks/useTerminalSize.js";
 import {
   collectAllTags,
   type ImageEntry,
@@ -10,18 +11,36 @@ import {
   saveTags,
 } from "./utils/dataset.js";
 
+// Rows reserved (outside the scrollable image list) for the list header and
+// the "Showing X-Y of Z" footer when browsing.
+const LIST_CHROME_ROWS = 4;
+// Fixed rows for the compact list shown above the editor while captioning.
+const COMPACT_LIST_ROWS = 3;
+// Minimum rows kept for the caption editor so the preview height stays a pure
+// function of the terminal size (and never shifts as you type).
+const EDITOR_MIN_ROWS = 7;
+
 interface AppProps {
   datasetPath: string;
 }
 
 export function App({ datasetPath }: AppProps) {
   const { exit } = useApp();
+  const { rows, columns } = useTerminalSize();
   const [entries, setEntries] = useState<ImageEntry[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [allTags, setAllTags] = useState<Set<string>>(new Set());
+  // Bumped on every editor keystroke. This forces <Image> (which lives here in
+  // App, not in CaptionEditor) to re-render each time Ink repaints the frame,
+  // so ink-picture's placement effect re-draws the kitty/sixel graphic after
+  // Ink overwrites those cells. Without it the image vanishes as you type.
+  const [, setRepaintTick] = useState(0);
+  const requestRepaint = useCallback(() => {
+    setRepaintTick((t) => (t + 1) % 1_000_000);
+  }, []);
 
   // Load dataset on mount
   useEffect(() => {
@@ -135,17 +154,29 @@ export function App({ datasetPath }: AppProps) {
 
   const isEditing = editingIndex !== null;
 
+  // Keep the whole app within the terminal so Ink's frame math stays aligned
+  // (an overflowing frame is what garbles the list while scrolling).
+  const listMaxVisible = Math.max(1, rows - LIST_CHROME_ROWS);
+  // Preview height depends only on the terminal size, so the image's position
+  // never shifts while typing -> ink-picture doesn't re-transmit it (no flash).
+  const previewHeight = Math.max(5, rows - COMPACT_LIST_ROWS - EDITOR_MIN_ROWS);
+
   return (
     <TerminalInfoProvider>
-      <Box flexDirection="column" height="100%">
+      <Box
+        flexDirection="column"
+        width={columns}
+        height={rows}
+        overflow="hidden"
+      >
         {/* Image list */}
-        <Box flexGrow={isEditing ? 0 : 1} flexDirection="column">
+        <Box flexShrink={0} flexDirection="column">
           <ImageList
             entries={entries}
             selectedIndex={selectedIndex}
             onSelect={setSelectedIndex}
             onEdit={handleEdit}
-            maxVisible={isEditing ? 3 : 20}
+            maxVisible={isEditing ? COMPACT_LIST_ROWS : listMaxVisible}
             disabled={isEditing}
             compact={isEditing}
           />
@@ -153,21 +184,24 @@ export function App({ datasetPath }: AppProps) {
 
         {/* Image preview - rendered at top level */}
         {isEditing && entries[editingIndex] && (
-          <Box height={40} width="100%">
+          <Box height={previewHeight} flexShrink={0} width="100%">
             <Image src={entries[editingIndex]?.imagePath ?? ""} />
           </Box>
         )}
 
         {/* Caption editor (shown when editing) */}
         {isEditing && entries[editingIndex] && (
-          <CaptionEditor
-            entry={entries[editingIndex]}
-            allTags={allTags}
-            onSave={handleSave}
-            onNext={handleNext}
-            onPrev={handlePrev}
-            onClose={handleClose}
-          />
+          <Box flexGrow={1} flexShrink={1} minHeight={0} overflow="hidden">
+            <CaptionEditor
+              entry={entries[editingIndex]}
+              allTags={allTags}
+              onSave={handleSave}
+              onNext={handleNext}
+              onPrev={handlePrev}
+              onClose={handleClose}
+              onActivity={requestRepaint}
+            />
+          </Box>
         )}
       </Box>
     </TerminalInfoProvider>

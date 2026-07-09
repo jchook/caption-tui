@@ -38,4 +38,36 @@ Supports Kitty, iTerm2, Sixel, and fallback rendering for inline image preview.
 
 const datasetPath = resolve(args[0] ?? ".");
 
-render(React.createElement(App, { datasetPath }));
+// Take over the whole terminal using the alternate screen buffer. This keeps
+// the TUI on its own scrollback-free screen so it never overwrites the user's
+// previous shell output (and that output isn't jumbled when the list scrolls).
+const ENTER_ALT_SCREEN = "\x1b[?1049h";
+const LEAVE_ALT_SCREEN = "\x1b[?1049l";
+
+let altScreenActive = false;
+
+function enterAltScreen() {
+  if (altScreenActive) return;
+  process.stdout.write(ENTER_ALT_SCREEN);
+  // Move the cursor home so the app renders from the top of the fresh screen.
+  process.stdout.write("\x1b[H");
+  altScreenActive = true;
+}
+
+function leaveAltScreen() {
+  if (!altScreenActive) return;
+  process.stdout.write(LEAVE_ALT_SCREEN);
+  altScreenActive = false;
+}
+
+enterAltScreen();
+
+// Restore the primary screen even if we exit abnormally, so the user's shell
+// isn't left stuck on the alternate buffer.
+process.on("exit", leaveAltScreen);
+
+const { waitUntilExit } = render(React.createElement(App, { datasetPath }));
+
+waitUntilExit()
+  .catch(() => {})
+  .finally(leaveAltScreen);

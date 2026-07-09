@@ -75,7 +75,7 @@ export function ImageList({
           entry.tags.length > 0 ? entry.tags.join(", ") : "(no tags)";
 
         return (
-          <Box key={entry.name}>
+          <Box key={entry.imagePath}>
             <Text inverse={isSelected} dimColor={!isSelected && compact}>
               {isSelected ? "▸ " : "  "}
             </Text>
