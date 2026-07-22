@@ -8,6 +8,7 @@ const entry: ImageEntry = {
   imagePath: "/tmp/img_003.png",
   captionPath: "/tmp/img_003.txt",
   tags: ["person", "portrait", "outdoors"],
+  caption: "person, portrait, outdoors",
 };
 
 const flush = () => new Promise((r) => setTimeout(r, 15));

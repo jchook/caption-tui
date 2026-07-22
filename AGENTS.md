@@ -4,7 +4,10 @@ A fast TUI for captioning image datasets with tag autocomplete.
 
 ## Overview
 
-CLI tool for managing image caption files (used for training image models). Given a folder of images, it provides a terminal UI to quickly add/edit comma-separated tags in corresponding `.txt` files.
+CLI tool for managing image caption files (used for training image models). Given a folder of images, it provides a terminal UI to quickly add/edit captions in corresponding `.txt` files. Two caption modes:
+
+- **Tag mode** (default): comma-separated keyword tags with tag autocomplete.
+- **Natural mode** (`--natural`/`-n`): free-form prose captions with per-word autocomplete drawn from the dataset's own vocabulary (common stopwords like "of"/"the" are never suggested).
 
 ## Tech Stack
 
@@ -16,9 +19,10 @@ CLI tool for managing image caption files (used for training image models). Give
 
 - `index.ts` - CLI entry point
 - `src/App.tsx` - Main app component with state management
-- `src/components/ImageList.tsx` - Scrollable image list with color-coded tag counts
+- `src/components/ImageList.tsx` - Scrollable image list with color-coded tag/word counts
 - `src/components/CaptionEditor.tsx` - Tag editor with autocomplete
-- `src/utils/dataset.ts` - Dataset loading, tag parsing, autocomplete logic
+- `src/components/NaturalCaptionEditor.tsx` - Prose editor with per-word autocomplete
+- `src/utils/dataset.ts` - Dataset loading, tag/prose parsing, autocomplete + stopwords
 
 ## Install
 
@@ -31,20 +35,28 @@ bun install -g caption-tui
 ## Usage
 
 ```bash
-caption-tui /path/to/dataset
+caption-tui /path/to/dataset            # tag mode (default)
+caption-tui --natural /path/to/dataset  # natural-language mode
 ```
 
 ## Controls
 
 **List mode**: ↑↓/jk to navigate, Enter to edit, q to quit
 
-**Edit mode**: Enter/Tab to accept suggestion, comma to add tag, ↑↓ to navigate images, Esc to close
+**Tag edit mode**: Enter/Tab to accept suggestion, comma to add tag, ↑↓ to navigate images, Esc to close
+
+**Natural edit mode**: Tab/→ to complete the current word, Enter to save & go to next image, ↑↓ to navigate images (or suggestions while typing), ←/→ to move the cursor, Esc to close
 
 ## Caption Format
 
-Tags are stored in `{imagename}.txt` as comma-separated values with spaces:
+**Tag mode** — `{imagename}.txt` holds comma-separated values with spaces:
 ```
 person, portrait, outdoors, natural lighting
+```
+
+**Natural mode** — `{imagename}.txt` holds free-form prose:
+```
+A person in a portrait pose outdoors under natural lighting.
 ```
 
 ## ink-picture Gotcha
