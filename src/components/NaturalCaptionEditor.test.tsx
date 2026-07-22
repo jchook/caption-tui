@@ -53,6 +53,18 @@ test("typed characters accumulate into prose and save on Esc", async () => {
   expect(captured.saved).toBe("a red car");
 });
 
+test("rapid typing (no render between keys) keeps every character", async () => {
+  const { stdin, captured } = mount();
+  await flush();
+  // Write each key back-to-back without awaiting a re-render between them, the
+  // condition that made stale-closure state drop characters ("vew frm abov").
+  for (const ch of "view from above") stdin.write(ch);
+  await flush();
+  stdin.write("\x1b");
+  await flush();
+  expect(captured.saved).toBe("view from above");
+});
+
 test("Enter saves the current caption and advances", async () => {
   const { stdin, captured } = mount();
   await flush();

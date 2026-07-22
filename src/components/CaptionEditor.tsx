@@ -1,5 +1,5 @@
 import { Box, Text, useInput } from "ink";
-import { Fragment, useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import type { ImageEntry } from "../utils/dataset.js";
 import { getTagSuggestions } from "../utils/dataset.js";
 
@@ -18,6 +18,14 @@ interface CaptionEditorProps {
   onActivity?: () => void;
 }
 
+// The in-progress tag being typed, plus the cursor within it.
+interface Draft {
+  value: string;
+  cursor: number;
+}
+
+const EMPTY_DRAFT: Draft = { value: "", cursor: 0 };
+
 export function CaptionEditor({
   entry,
   allTags,
@@ -28,18 +36,41 @@ export function CaptionEditor({
   onActivity,
 }: CaptionEditorProps) {
   const [tags, setTags] = useState<string[]>(entry.tags);
-  const [currentInput, setCurrentInput] = useState("");
+  const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
   const [selectedSuggestion, setSelectedSuggestion] = useState(0);
-  const [cursorPosition, setCursorPosition] = useState(0);
+
+  // Mirror the latest committed values so handlers that read them (save,
+  // accept-tag) never use a stale closure mid-keystroke-batch. Ink can fire the
+  // input handler several times before React commits a re-render.
+  const tagsRef = useRef(tags);
+  const draftRef = useRef(draft);
+  tagsRef.current = tags;
+  draftRef.current = draft;
+
+  // Functional updates that keep the ref in lockstep, so rapid input builds on
+  // the freshest value rather than the one captured when this render ran.
+  const updateDraft = useCallback((fn: (prev: Draft) => Draft) => {
+    setDraft((prev) => {
+      const next = fn(prev);
+      draftRef.current = next;
+      return next;
+    });
+  }, []);
+  const setTagsSynced = useCallback((next: string[]) => {
+    tagsRef.current = next;
+    setTags(next);
+  }, []);
 
   // Reset state when entry changes
   useEffect(() => {
+    tagsRef.current = entry.tags;
+    draftRef.current = EMPTY_DRAFT;
     setTags(entry.tags);
-    setCurrentInput("");
-    setCursorPosition(0);
+    setDraft(EMPTY_DRAFT);
     setSelectedSuggestion(0);
   }, [entry]);
 
+  const currentInput = draft.value;
   const suggestions = getTagSuggestions(allTags, currentInput, tags);
   const topSuggestion = suggestions[0] || "";
   const ghostText =
@@ -48,8 +79,9 @@ export function CaptionEditor({
       : "";
 
   const getCurrentTags = useCallback(() => {
-    return currentInput.trim() ? [...tags, currentInput.trim()] : tags;
-  }, [tags, currentInput]);
+    const trimmed = draftRef.current.value.trim();
+    return trimmed ? [...tagsRef.current, trimmed] : tagsRef.current;
+  }, []);
 
   const saveAndNext = useCallback(() => {
     onSave(getCurrentTags());
@@ -65,31 +97,31 @@ export function CaptionEditor({
     if (suggestions.length > 0) {
       const suggestion =
         suggestions[selectedSuggestion] ?? suggestions[0] ?? "";
-      setTags([...tags, suggestion]);
-      setCurrentInput("");
-      setCursorPosition(0);
+      setTagsSynced([...tagsRef.current, suggestion]);
+      updateDraft(() => EMPTY_DRAFT);
       setSelectedSuggestion(0);
     }
-  }, [suggestions, selectedSuggestion, tags]);
+  }, [suggestions, selectedSuggestion, setTagsSynced, updateDraft]);
 
   const addCurrentTag = useCallback(() => {
-    const trimmed = currentInput.trim();
+    const trimmed = draftRef.current.value.trim();
     if (
       trimmed &&
-      !tags.map((t) => t.toLowerCase()).includes(trimmed.toLowerCase())
+      !tagsRef.current
+        .map((t) => t.toLowerCase())
+        .includes(trimmed.toLowerCase())
     ) {
-      setTags([...tags, trimmed]);
-      setCurrentInput("");
-      setCursorPosition(0);
+      setTagsSynced([...tagsRef.current, trimmed]);
+      updateDraft(() => EMPTY_DRAFT);
       setSelectedSuggestion(0);
     }
-  }, [currentInput, tags]);
+  }, [setTagsSynced, updateDraft]);
 
   const removeLastTag = useCallback(() => {
-    if (currentInput === "" && tags.length > 0) {
-      setTags(tags.slice(0, -1));
+    if (draftRef.current.value === "" && tagsRef.current.length > 0) {
+      setTagsSynced(tagsRef.current.slice(0, -1));
     }
-  }, [currentInput, tags]);
+  }, [setTagsSynced]);
 
   useInput((input, key) => {
     // Let the parent repaint the (kitty/sixel) image preview, which Ink erases
@@ -97,17 +129,13 @@ export function CaptionEditor({
     onActivity?.();
 
     if (key.escape) {
-      // Save current state and close
-      const finalTags = currentInput.trim()
-        ? [...tags, currentInput.trim()]
-        : tags;
-      onSave(finalTags);
+      onSave(getCurrentTags());
       onClose();
       return;
     }
 
     if (key.return || key.tab) {
-      if (currentInput.trim()) {
+      if (draftRef.current.value.trim()) {
         // Accept suggestion if available, otherwise add current input as tag
         if (suggestions.length > 0) {
           acceptSuggestion();
@@ -119,12 +147,11 @@ export function CaptionEditor({
     }
 
     if (key.backspace || key.delete) {
-      if (cursorPosition > 0) {
-        setCurrentInput(
-          currentInput.slice(0, cursorPosition - 1) +
-            currentInput.slice(cursorPosition),
-        );
-        setCursorPosition(cursorPosition - 1);
+      if (draftRef.current.cursor > 0) {
+        updateDraft((d) => ({
+          value: d.value.slice(0, d.cursor - 1) + d.value.slice(d.cursor),
+          cursor: d.cursor - 1,
+        }));
       } else {
         removeLastTag();
       }
@@ -133,8 +160,8 @@ export function CaptionEditor({
     }
 
     if (key.upArrow) {
-      if (suggestions.length > 0 && currentInput) {
-        setSelectedSuggestion(Math.max(0, selectedSuggestion - 1));
+      if (suggestions.length > 0 && draftRef.current.value) {
+        setSelectedSuggestion((s) => Math.max(0, s - 1));
       } else {
         saveAndPrev();
       }
@@ -142,10 +169,8 @@ export function CaptionEditor({
     }
 
     if (key.downArrow) {
-      if (suggestions.length > 0 && currentInput) {
-        setSelectedSuggestion(
-          Math.min(suggestions.length - 1, selectedSuggestion + 1),
-        );
+      if (suggestions.length > 0 && draftRef.current.value) {
+        setSelectedSuggestion((s) => Math.min(suggestions.length - 1, s + 1));
       } else {
         saveAndNext();
       }
@@ -153,16 +178,20 @@ export function CaptionEditor({
     }
 
     if (key.leftArrow) {
-      setCursorPosition(Math.max(0, cursorPosition - 1));
+      updateDraft((d) => ({ ...d, cursor: Math.max(0, d.cursor - 1) }));
       return;
     }
 
     if (key.rightArrow) {
       // Right arrow can also accept ghost text
-      if (cursorPosition === currentInput.length && ghostText) {
+      const d = draftRef.current;
+      if (d.cursor === d.value.length && ghostText) {
         acceptSuggestion();
       } else {
-        setCursorPosition(Math.min(currentInput.length, cursorPosition + 1));
+        updateDraft((prev) => ({
+          ...prev,
+          cursor: Math.min(prev.value.length, prev.cursor + 1),
+        }));
       }
       return;
     }
@@ -175,12 +204,10 @@ export function CaptionEditor({
 
     // Regular character input
     if (input && !key.ctrl && !key.meta) {
-      setCurrentInput(
-        currentInput.slice(0, cursorPosition) +
-          input +
-          currentInput.slice(cursorPosition),
-      );
-      setCursorPosition(cursorPosition + input.length);
+      updateDraft((d) => ({
+        value: d.value.slice(0, d.cursor) + input + d.value.slice(d.cursor),
+        cursor: d.cursor + input.length,
+      }));
       setSelectedSuggestion(0);
     }
   });

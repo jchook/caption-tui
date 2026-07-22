@@ -1,5 +1,5 @@
 import { Box, Text, useInput } from "ink";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useExternalEditor } from "../hooks/useExternalEditor.js";
 import type { ImageEntry } from "../utils/dataset.js";
 import {
@@ -22,6 +22,11 @@ interface NaturalCaptionEditorProps {
   onActivity?: () => void;
 }
 
+interface EditorState {
+  text: string;
+  cursor: number;
+}
+
 export function NaturalCaptionEditor({
   entry,
   onSave,
@@ -30,35 +35,47 @@ export function NaturalCaptionEditor({
   onClose,
   onActivity,
 }: NaturalCaptionEditorProps) {
-  const [text, setText] = useState(entry.caption);
-  const [cursor, setCursor] = useState(entry.caption.length);
+  const [state, setState] = useState<EditorState>(() => ({
+    text: entry.caption,
+    cursor: entry.caption.length,
+  }));
+  const { text, cursor } = state;
   const launchExternalEditor = useExternalEditor();
 
-  // Reset state when the image changes.
+  // Mirror the latest committed state so handlers that read the caption
+  // (save/nav/$EDITOR) never use a stale closure value mid-keystroke-batch.
+  const stateRef = useRef(state);
+  stateRef.current = state;
+
+  // Functional updates are essential: Ink can fire the input handler several
+  // times before React commits a re-render, so each keystroke must build on the
+  // freshest text, not the `text` captured when this render's handler was made.
+  // (Updating stateRef here too keeps read-only handlers correct within a batch.)
+  const update = useCallback((fn: (prev: EditorState) => EditorState) => {
+    setState((prev) => {
+      const next = fn(prev);
+      stateRef.current = next;
+      return next;
+    });
+  }, []);
+
+  // Reset when the image changes.
   useEffect(() => {
-    setText(entry.caption);
-    setCursor(entry.caption.length);
+    const next = { text: entry.caption, cursor: entry.caption.length };
+    stateRef.current = next;
+    setState(next);
   }, [entry]);
 
   const openInExternalEditor = useCallback(() => {
-    launchExternalEditor(text).then((edited) => {
+    launchExternalEditor(stateRef.current.text).then((edited) => {
       if (edited === null) return;
-      setText(edited);
-      setCursor(edited.length);
+      update(() => ({ text: edited, cursor: edited.length }));
       onSave(edited);
       // The screen was torn down/resized while $EDITOR ran; nudge the parent
       // to re-transmit the image preview.
       onActivity?.();
     });
-  }, [launchExternalEditor, text, onSave, onActivity]);
-
-  const insertText = useCallback(
-    (value: string) => {
-      setText(text.slice(0, cursor) + value + text.slice(cursor));
-      setCursor(cursor + value.length);
-    },
-    [text, cursor],
-  );
+  }, [launchExternalEditor, update, onSave, onActivity]);
 
   useInput((input, key) => {
     // Let the parent repaint the (kitty/sixel) image preview, which Ink erases
@@ -66,7 +83,7 @@ export function NaturalCaptionEditor({
     onActivity?.();
 
     if (key.escape) {
-      onSave(text);
+      onSave(stateRef.current.text);
       onClose();
       return;
     }
@@ -83,7 +100,7 @@ export function NaturalCaptionEditor({
 
     // Enter saves and advances. Captions are single-line prose.
     if (key.return) {
-      onSave(text);
+      onSave(stateRef.current.text);
       onNext();
       return;
     }
@@ -92,49 +109,49 @@ export function NaturalCaptionEditor({
 
     // Word jumps: Ctrl/Alt + arrows, and emacs Alt-b / Alt-f.
     if ((key.ctrl || key.meta) && key.leftArrow) {
-      setCursor(wordLeftIndex(text, cursor));
+      update((s) => ({ ...s, cursor: wordLeftIndex(s.text, s.cursor) }));
       return;
     }
     if ((key.ctrl || key.meta) && key.rightArrow) {
-      setCursor(wordRightIndex(text, cursor));
+      update((s) => ({ ...s, cursor: wordRightIndex(s.text, s.cursor) }));
       return;
     }
     if (key.meta && input === "b") {
-      setCursor(wordLeftIndex(text, cursor));
+      update((s) => ({ ...s, cursor: wordLeftIndex(s.text, s.cursor) }));
       return;
     }
     if (key.meta && input === "f") {
-      setCursor(wordRightIndex(text, cursor));
+      update((s) => ({ ...s, cursor: wordRightIndex(s.text, s.cursor) }));
       return;
     }
 
     // Line ends: Ctrl-A / Ctrl-E (emacs) and Home / End.
     if (key.home || (key.ctrl && input === "a")) {
-      setCursor(0);
+      update((s) => ({ ...s, cursor: 0 }));
       return;
     }
     if (key.end || (key.ctrl && input === "e")) {
-      setCursor(text.length);
+      update((s) => ({ ...s, cursor: s.text.length }));
       return;
     }
 
     if (key.leftArrow) {
-      setCursor(Math.max(0, cursor - 1));
+      update((s) => ({ ...s, cursor: Math.max(0, s.cursor - 1) }));
       return;
     }
     if (key.rightArrow) {
-      setCursor(Math.min(text.length, cursor + 1));
+      update((s) => ({ ...s, cursor: Math.min(s.text.length, s.cursor + 1) }));
       return;
     }
 
     // Up/down navigate images (save the current caption first).
     if (key.upArrow) {
-      onSave(text);
+      onSave(stateRef.current.text);
       onPrev();
       return;
     }
     if (key.downArrow) {
-      onSave(text);
+      onSave(stateRef.current.text);
       onNext();
       return;
     }
@@ -143,23 +160,28 @@ export function NaturalCaptionEditor({
 
     // Ctrl-W: delete the word before the cursor.
     if (key.ctrl && input === "w") {
-      const next = deleteWordBefore(text, cursor);
-      setText(next.text);
-      setCursor(next.cursor);
+      update((s) => deleteWordBefore(s.text, s.cursor));
       return;
     }
 
     if (key.backspace || key.delete) {
-      if (cursor > 0) {
-        setText(text.slice(0, cursor - 1) + text.slice(cursor));
-        setCursor(cursor - 1);
-      }
+      update((s) =>
+        s.cursor > 0
+          ? {
+              text: s.text.slice(0, s.cursor - 1) + s.text.slice(s.cursor),
+              cursor: s.cursor - 1,
+            }
+          : s,
+      );
       return;
     }
 
     // Regular character input (ignore other control/meta chords).
     if (input && !key.ctrl && !key.meta) {
-      insertText(input);
+      update((s) => ({
+        text: s.text.slice(0, s.cursor) + input + s.text.slice(s.cursor),
+        cursor: s.cursor + input.length,
+      }));
     }
   });
 
