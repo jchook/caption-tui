@@ -1,12 +1,15 @@
 import { Box, Text, useInput } from "ink";
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useExternalEditor } from "../hooks/useExternalEditor.js";
 import type { ImageEntry } from "../utils/dataset.js";
-import { currentWordAt, getWordSuggestions } from "../utils/dataset.js";
+import {
+  deleteWordBefore,
+  wordLeftIndex,
+  wordRightIndex,
+} from "../utils/textNav.js";
 
 interface NaturalCaptionEditorProps {
   entry: ImageEntry;
-  vocabulary: Set<string>;
   onSave: (caption: string) => void;
   onNext: () => void;
   onPrev: () => void;
@@ -19,15 +22,8 @@ interface NaturalCaptionEditorProps {
   onActivity?: () => void;
 }
 
-/** True when the character at `cursor` is not part of a word (or is EOL). */
-function atWordBoundary(text: string, cursor: number): boolean {
-  const char = text[cursor];
-  return char === undefined || !/[a-zA-Z'-]/.test(char);
-}
-
 export function NaturalCaptionEditor({
   entry,
-  vocabulary,
   onSave,
   onNext,
   onPrev,
@@ -36,42 +32,19 @@ export function NaturalCaptionEditor({
 }: NaturalCaptionEditorProps) {
   const [text, setText] = useState(entry.caption);
   const [cursor, setCursor] = useState(entry.caption.length);
-  const [selectedSuggestion, setSelectedSuggestion] = useState(0);
   const launchExternalEditor = useExternalEditor();
 
   // Reset state when the image changes.
   useEffect(() => {
     setText(entry.caption);
     setCursor(entry.caption.length);
-    setSelectedSuggestion(0);
   }, [entry]);
-
-  // Only complete a word when the cursor sits at its trailing edge, otherwise
-  // typing in the middle of a word would show a bogus ghost.
-  const currentWord = useMemo(
-    () => (atWordBoundary(text, cursor) ? currentWordAt(text, cursor) : ""),
-    [text, cursor],
-  );
-  const suggestions = useMemo(
-    () => getWordSuggestions(vocabulary, currentWord),
-    [vocabulary, currentWord],
-  );
-  const hasSuggestions = suggestions.length > 0 && currentWord.length > 0;
-  const activeSuggestion = hasSuggestions
-    ? (suggestions[selectedSuggestion] ?? suggestions[0] ?? "")
-    : "";
-  const ghostText = activeSuggestion
-    ? activeSuggestion.slice(currentWord.length)
-    : "";
-
-  const saveNow = useCallback(() => onSave(text), [onSave, text]);
 
   const openInExternalEditor = useCallback(() => {
     launchExternalEditor(text).then((edited) => {
       if (edited === null) return;
       setText(edited);
       setCursor(edited.length);
-      setSelectedSuggestion(0);
       onSave(edited);
       // The screen was torn down/resized while $EDITOR ran; nudge the parent
       // to re-transmit the image preview.
@@ -79,22 +52,10 @@ export function NaturalCaptionEditor({
     });
   }, [launchExternalEditor, text, onSave, onActivity]);
 
-  const acceptSuggestion = useCallback(() => {
-    if (!ghostText) return false;
-    // The completion for the word ending at the cursor slots in right there;
-    // add a trailing space so prose keeps flowing into the next word.
-    const insert = `${ghostText} `;
-    setText(text.slice(0, cursor) + insert + text.slice(cursor));
-    setCursor(cursor + insert.length);
-    setSelectedSuggestion(0);
-    return true;
-  }, [ghostText, text, cursor]);
-
   const insertText = useCallback(
     (value: string) => {
       setText(text.slice(0, cursor) + value + text.slice(cursor));
       setCursor(cursor + value.length);
-      setSelectedSuggestion(0);
     },
     [text, cursor],
   );
@@ -105,7 +66,7 @@ export function NaturalCaptionEditor({
     onActivity?.();
 
     if (key.escape) {
-      saveNow();
+      onSave(text);
       onClose();
       return;
     }
@@ -117,17 +78,74 @@ export function NaturalCaptionEditor({
       return;
     }
 
-    // Tab always accepts the current completion (no-op if there's no ghost).
-    if (key.tab) {
-      acceptSuggestion();
-      return;
-    }
+    // Ignore Tab (no autocomplete to accept) rather than inserting a tab char.
+    if (key.tab) return;
 
-    // Enter saves and advances, matching tag mode's muscle memory. Captions are
-    // single-line prose, so there's no newline to insert.
+    // Enter saves and advances. Captions are single-line prose.
     if (key.return) {
       onSave(text);
       onNext();
+      return;
+    }
+
+    // --- Cursor motion -------------------------------------------------------
+
+    // Word jumps: Ctrl/Alt + arrows, and emacs Alt-b / Alt-f.
+    if ((key.ctrl || key.meta) && key.leftArrow) {
+      setCursor(wordLeftIndex(text, cursor));
+      return;
+    }
+    if ((key.ctrl || key.meta) && key.rightArrow) {
+      setCursor(wordRightIndex(text, cursor));
+      return;
+    }
+    if (key.meta && input === "b") {
+      setCursor(wordLeftIndex(text, cursor));
+      return;
+    }
+    if (key.meta && input === "f") {
+      setCursor(wordRightIndex(text, cursor));
+      return;
+    }
+
+    // Line ends: Ctrl-A / Ctrl-E (emacs) and Home / End.
+    if (key.home || (key.ctrl && input === "a")) {
+      setCursor(0);
+      return;
+    }
+    if (key.end || (key.ctrl && input === "e")) {
+      setCursor(text.length);
+      return;
+    }
+
+    if (key.leftArrow) {
+      setCursor(Math.max(0, cursor - 1));
+      return;
+    }
+    if (key.rightArrow) {
+      setCursor(Math.min(text.length, cursor + 1));
+      return;
+    }
+
+    // Up/down navigate images (save the current caption first).
+    if (key.upArrow) {
+      onSave(text);
+      onPrev();
+      return;
+    }
+    if (key.downArrow) {
+      onSave(text);
+      onNext();
+      return;
+    }
+
+    // --- Editing -------------------------------------------------------------
+
+    // Ctrl-W: delete the word before the cursor.
+    if (key.ctrl && input === "w") {
+      const next = deleteWordBefore(text, cursor);
+      setText(next.text);
+      setCursor(next.cursor);
       return;
     }
 
@@ -135,51 +153,11 @@ export function NaturalCaptionEditor({
       if (cursor > 0) {
         setText(text.slice(0, cursor - 1) + text.slice(cursor));
         setCursor(cursor - 1);
-        setSelectedSuggestion(0);
       }
       return;
     }
 
-    if (key.upArrow) {
-      if (hasSuggestions) {
-        setSelectedSuggestion(Math.max(0, selectedSuggestion - 1));
-      } else {
-        onSave(text);
-        onPrev();
-      }
-      return;
-    }
-
-    if (key.downArrow) {
-      if (hasSuggestions) {
-        setSelectedSuggestion(
-          Math.min(suggestions.length - 1, selectedSuggestion + 1),
-        );
-      } else {
-        onSave(text);
-        onNext();
-      }
-      return;
-    }
-
-    if (key.leftArrow) {
-      setCursor(Math.max(0, cursor - 1));
-      setSelectedSuggestion(0);
-      return;
-    }
-
-    if (key.rightArrow) {
-      // At a word's end, the right arrow accepts the inline ghost completion.
-      if (ghostText && cursor === text.length) {
-        acceptSuggestion();
-      } else {
-        setCursor(Math.min(text.length, cursor + 1));
-        setSelectedSuggestion(0);
-      }
-      return;
-    }
-
-    // Regular character input.
+    // Regular character input (ignore other control/meta chords).
     if (input && !key.ctrl && !key.meta) {
       insertText(input);
     }
@@ -188,7 +166,7 @@ export function NaturalCaptionEditor({
   const before = text.slice(0, cursor);
   const underCursor = text.slice(cursor, cursor + 1) || " ";
   const after = text.slice(cursor + 1);
-  const wordCount = text.trim() ? text.trim().split(/\s+/).length : 0;
+  const words = text.trim() ? text.trim().split(/\s+/).length : 0;
 
   return (
     <Box
@@ -203,38 +181,20 @@ export function NaturalCaptionEditor({
         </Text>
         <Text dimColor>
           {" "}
-          - Tab: complete, Enter/↑↓: nav, ^G: $EDITOR, Esc: close
+          - Enter/↑↓: nav, ^A/^E: home/end, ^G: $EDITOR, Esc: close
         </Text>
       </Box>
 
       <Box flexWrap="wrap">
         <Text dimColor>Caption: </Text>
         <Text>{before}</Text>
-        <Text dimColor>{ghostText}</Text>
         <Text inverse>{underCursor}</Text>
         <Text>{after}</Text>
       </Box>
 
-      {hasSuggestions ? (
-        <Box marginTop={1}>
-          <Text dimColor>Suggestions: </Text>
-          {suggestions.slice(0, 8).map((suggestion, i) => (
-            <Fragment key={suggestion}>
-              <Text
-                inverse={i === selectedSuggestion}
-                color={i === selectedSuggestion ? "cyan" : undefined}
-              >
-                {suggestion}
-              </Text>
-              <Text dimColor> </Text>
-            </Fragment>
-          ))}
-        </Box>
-      ) : (
-        <Box marginTop={1}>
-          <Text dimColor>{wordCount} words</Text>
-        </Box>
-      )}
+      <Box marginTop={1}>
+        <Text dimColor>{words} words</Text>
+      </Box>
     </Box>
   );
 }

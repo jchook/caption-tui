@@ -6,10 +6,8 @@ import { ImageList } from "./components/ImageList.js";
 import { NaturalCaptionEditor } from "./components/NaturalCaptionEditor.js";
 import { useTerminalSize } from "./hooks/useTerminalSize.js";
 import {
-  addWordsToVocabulary,
   type CaptionMode,
   collectAllTags,
-  collectVocabulary,
   type ImageEntry,
   loadDataset,
   saveCaption,
@@ -39,10 +37,8 @@ export function App({ datasetPath, mode = "tags" }: AppProps) {
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  // Tag mode autocompletes against known tags; natural mode against a word
-  // vocabulary. Only the one for the active mode is populated.
+  // Tag mode autocompletes against known tags. Natural mode has no autocomplete.
   const [allTags, setAllTags] = useState<Set<string>>(new Set());
-  const [vocabulary, setVocabulary] = useState<Set<string>>(new Set());
   // Bumped on every editor keystroke. This forces <Image> (which lives here in
   // App, not in CaptionEditor) to re-render each time Ink repaints the frame,
   // so ink-picture's placement effect re-draws the kitty/sixel graphic after
@@ -57,9 +53,7 @@ export function App({ datasetPath, mode = "tags" }: AppProps) {
     loadDataset(datasetPath)
       .then((loaded) => {
         setEntries(loaded);
-        if (isNatural) {
-          setVocabulary(collectVocabulary(loaded));
-        } else {
+        if (!isNatural) {
           setAllTags(collectAllTags(loaded));
         }
         setLoading(false);
@@ -128,13 +122,6 @@ export function App({ datasetPath, mode = "tags" }: AppProps) {
         const updated = [...prev];
         updated[idx] = { ...entry, caption: trimmed };
         return updated;
-      });
-
-      // Learn any new words for future autocomplete.
-      setVocabulary((prev) => {
-        const newSet = new Set(prev);
-        addWordsToVocabulary(newSet, trimmed);
-        return newSet;
       });
     },
     [editingIndex, entries],
@@ -236,7 +223,6 @@ export function App({ datasetPath, mode = "tags" }: AppProps) {
             {isNatural ? (
               <NaturalCaptionEditor
                 entry={entries[editingIndex]}
-                vocabulary={vocabulary}
                 onSave={handleSaveCaption}
                 onNext={handleNext}
                 onPrev={handlePrev}

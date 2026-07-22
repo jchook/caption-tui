@@ -7,7 +7,7 @@ A fast TUI for captioning image datasets with tag autocomplete.
 CLI tool for managing image caption files (used for training image models). Given a folder of images, it provides a terminal UI to quickly add/edit captions in corresponding `.txt` files. Two caption modes:
 
 - **Tag mode** (default): comma-separated keyword tags with tag autocomplete.
-- **Natural mode** (`--natural`/`-n`): free-form prose captions with per-word autocomplete drawn from the dataset's own vocabulary (common stopwords like "of"/"the" are never suggested).
+- **Natural mode** (`--natural`/`-n`): free-form prose captions with emacs/readline-style cursor editing (no autocomplete) and a Ctrl-G handoff to `$EDITOR`.
 
 ## Tech Stack
 
@@ -21,9 +21,10 @@ CLI tool for managing image caption files (used for training image models). Give
 - `src/App.tsx` - Main app component with state management
 - `src/components/ImageList.tsx` - Scrollable image list with color-coded tag/word counts
 - `src/components/CaptionEditor.tsx` - Tag editor with autocomplete
-- `src/components/NaturalCaptionEditor.tsx` - Prose editor with per-word autocomplete + $EDITOR handoff
+- `src/components/NaturalCaptionEditor.tsx` - Prose editor (emacs-style keys) + $EDITOR handoff
 - `src/hooks/useExternalEditor.ts` - Ctrl-G handoff to $EDITOR (tmux split or full-screen)
-- `src/utils/dataset.ts` - Dataset loading, tag/prose parsing, autocomplete + stopwords
+- `src/utils/dataset.ts` - Dataset loading, tag/prose parsing, tag autocomplete
+- `src/utils/textNav.ts` - Word-wise cursor movement / deletion for the prose editor
 - `src/utils/inkControl.ts` - Bridge to the Ink instance's clear() for full repaints
 
 ## Install
@@ -47,7 +48,7 @@ caption-tui --natural /path/to/dataset  # natural-language mode
 
 **Tag edit mode**: Enter/Tab to accept suggestion, comma to add tag, ↑↓ to navigate images, Esc to close
 
-**Natural edit mode**: Tab/→ to complete the current word, Enter to save & go to next image, ↑↓ to navigate images (or suggestions while typing), ←/→ to move the cursor, Ctrl-G to edit in `$EDITOR`, Esc to close
+**Natural edit mode**: Enter to save & go to next image, ↑↓ to navigate images, ←/→ to move the cursor (Ctrl-←/→, Alt-←/→, Alt-b/f for word jumps), Ctrl-A/Ctrl-E or Home/End for start/end of line, Ctrl-W to delete the previous word, Ctrl-G to edit in `$EDITOR`, Esc to close. The cursor is an inverse block over the current character. Cursor/word helpers live in `src/utils/textNav.ts`.
 
 ### `$EDITOR` handoff (Ctrl-G)
 

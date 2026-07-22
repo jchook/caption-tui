@@ -13,93 +13,90 @@ const entry: ImageEntry = {
 
 const flush = () => new Promise((r) => setTimeout(r, 15));
 
-test("typed characters accumulate into prose and save on Esc", async () => {
-  const captured: { saved: string | null } = { saved: null };
-
-  const { stdin } = render(
-    <NaturalCaptionEditor
-      entry={entry}
-      vocabulary={new Set()}
-      onSave={(caption) => {
-        captured.saved = caption;
-      }}
-      onNext={() => {}}
-      onPrev={() => {}}
-      onClose={() => {}}
-    />,
-  );
-
-  await flush();
-  for (const ch of "a red car") {
-    stdin.write(ch);
-    await flush();
-  }
-  stdin.write("\x1b"); // Esc -> save & close
-  await flush();
-
-  expect(captured.saved).toBe("a red car");
-});
-
-test("Tab completes the current word from the vocabulary", async () => {
-  const captured: { saved: string | null } = { saved: null };
-
-  const { stdin } = render(
-    <NaturalCaptionEditor
-      entry={entry}
-      vocabulary={new Set(["beautiful", "beach"])}
-      onSave={(caption) => {
-        captured.saved = caption;
-      }}
-      onNext={() => {}}
-      onPrev={() => {}}
-      onClose={() => {}}
-    />,
-  );
-
-  await flush();
-  for (const ch of "beau") {
-    stdin.write(ch);
-    await flush();
-  }
-  stdin.write("\t"); // Tab -> accept "beautiful" (adds a trailing space)
-  await flush();
-  stdin.write("\x1b");
-  await flush();
-
-  // The editor keeps the trailing space so prose keeps flowing; the app
-  // trims it when persisting to disk (saveCaption).
-  expect(captured.saved).toBe("beautiful ");
-});
-
-test("Enter saves the current caption and advances", async () => {
-  const captured: { saved: string | null; nexts: number } = {
+function mount(initial = "") {
+  const captured: { saved: string | null; nexts: number; prevs: number } = {
     saved: null,
     nexts: 0,
+    prevs: 0,
   };
-
   const { stdin } = render(
     <NaturalCaptionEditor
-      entry={entry}
-      vocabulary={new Set()}
+      entry={{ ...entry, caption: initial }}
       onSave={(caption) => {
         captured.saved = caption;
       }}
       onNext={() => {
         captured.nexts++;
       }}
-      onPrev={() => {}}
+      onPrev={() => {
+        captured.prevs++;
+      }}
       onClose={() => {}}
     />,
   );
+  return { stdin, captured };
+}
 
-  await flush();
-  for (const ch of "hello") {
+async function type(stdin: { write: (s: string) => void }, s: string) {
+  for (const ch of s) {
     stdin.write(ch);
     await flush();
   }
+}
+
+test("typed characters accumulate into prose and save on Esc", async () => {
+  const { stdin, captured } = mount();
+  await flush();
+  await type(stdin, "a red car");
+  stdin.write("\x1b"); // Esc -> save & close
+  await flush();
+  expect(captured.saved).toBe("a red car");
+});
+
+test("Enter saves the current caption and advances", async () => {
+  const { stdin, captured } = mount();
+  await flush();
+  await type(stdin, "hello");
   stdin.write("\r"); // Enter -> save & next
   await flush();
-
   expect(captured.saved).toBe("hello");
   expect(captured.nexts).toBe(1);
+});
+
+test("Ctrl-A jumps to start; typing inserts there", async () => {
+  const { stdin, captured } = mount();
+  await flush();
+  await type(stdin, "world");
+  stdin.write("\x01"); // Ctrl-A -> home
+  await flush();
+  await type(stdin, "X");
+  stdin.write("\x1b");
+  await flush();
+  expect(captured.saved).toBe("Xworld");
+});
+
+test("Ctrl-E jumps to end after Ctrl-A", async () => {
+  const { stdin, captured } = mount();
+  await flush();
+  await type(stdin, "world");
+  stdin.write("\x01"); // home
+  await flush();
+  stdin.write("\x05"); // Ctrl-E -> end
+  await flush();
+  await type(stdin, "!");
+  stdin.write("\x1b");
+  await flush();
+  expect(captured.saved).toBe("world!");
+});
+
+test("Ctrl-W deletes the word before the cursor", async () => {
+  const { stdin, captured } = mount();
+  await flush();
+  await type(stdin, "big red car");
+  stdin.write("\x17"); // Ctrl-W -> delete "car" (leaves a trailing space)
+  await flush();
+  stdin.write("\x1b");
+  await flush();
+  // Editor keeps the trailing space; the app trims it on persist (saveCaption).
+  expect(captured.saved).toBe("big red ");
 });

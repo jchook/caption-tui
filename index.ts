@@ -21,8 +21,7 @@ Arguments:
 
 Options:
   --natural, -n     Natural-language mode: edit free-form prose captions
-                    instead of comma-separated tags. Autocompletes words
-                    from the dataset (skipping common stopwords).
+                    instead of comma-separated tags.
 
 Controls (list mode):
   ↑/↓ or j/k       Navigate image list
@@ -37,11 +36,12 @@ Controls (tag mode edit):
   Esc              Close editor (saves changes)
 
 Controls (natural mode edit):
-  Tab              Complete the current word (inline suggestion)
-  → (at end)       Accept inline suggestion
   Enter            Save and go to next image
-  ↑/↓              Prev/next image (or navigate suggestions if shown)
+  ↑/↓              Prev/next image
   ←/→              Move the cursor
+  Ctrl-←/→         Move the cursor a word at a time (also Alt-←/→, Alt-b/f)
+  Ctrl-A / Ctrl-E  Jump to start / end of line (also Home / End)
+  Ctrl-W           Delete the word before the cursor
   Ctrl-G           Edit in $EDITOR (opens in a tmux split when inside tmux,
                    keeping the image preview visible; full-screen otherwise)
   Esc              Close editor (saves changes)
