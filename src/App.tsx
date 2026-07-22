@@ -3,11 +3,14 @@ import Image, { TerminalInfoProvider } from "ink-picture";
 import { useCallback, useEffect, useState } from "react";
 import { CaptionEditor } from "./components/CaptionEditor.js";
 import { ImageList } from "./components/ImageList.js";
+import { NaturalCaptionEditor } from "./components/NaturalCaptionEditor.js";
 import { useTerminalSize } from "./hooks/useTerminalSize.js";
 import {
+  type CaptionMode,
   collectAllTags,
   type ImageEntry,
   loadDataset,
+  saveCaption,
   saveTags,
 } from "./utils/dataset.js";
 
@@ -22,9 +25,11 @@ const EDITOR_MIN_ROWS = 7;
 
 interface AppProps {
   datasetPath: string;
+  mode?: CaptionMode;
 }
 
-export function App({ datasetPath }: AppProps) {
+export function App({ datasetPath, mode = "tags" }: AppProps) {
+  const isNatural = mode === "natural";
   const { exit } = useApp();
   const { rows, columns } = useTerminalSize();
   const [entries, setEntries] = useState<ImageEntry[]>([]);
@@ -32,6 +37,7 @@ export function App({ datasetPath }: AppProps) {
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Tag mode autocompletes against known tags. Natural mode has no autocomplete.
   const [allTags, setAllTags] = useState<Set<string>>(new Set());
   // Bumped on every editor keystroke. This forces <Image> (which lives here in
   // App, not in CaptionEditor) to re-render each time Ink repaints the frame,
@@ -47,14 +53,16 @@ export function App({ datasetPath }: AppProps) {
     loadDataset(datasetPath)
       .then((loaded) => {
         setEntries(loaded);
-        setAllTags(collectAllTags(loaded));
+        if (!isNatural) {
+          setAllTags(collectAllTags(loaded));
+        }
         setLoading(false);
       })
       .catch((err) => {
         setError(err.message);
         setLoading(false);
       });
-  }, [datasetPath]);
+  }, [datasetPath, isNatural]);
 
   // Handle quit
   useInput((input) => {
@@ -95,6 +103,25 @@ export function App({ datasetPath }: AppProps) {
           newSet.add(tag.toLowerCase());
         }
         return newSet;
+      });
+    },
+    [editingIndex, entries],
+  );
+
+  const handleSaveCaption = useCallback(
+    async (caption: string) => {
+      if (editingIndex === null) return;
+
+      const entry = entries[editingIndex];
+      if (!entry) return;
+      const trimmed = caption.trim();
+      await saveCaption(entry.captionPath, trimmed);
+
+      const idx = editingIndex;
+      setEntries((prev) => {
+        const updated = [...prev];
+        updated[idx] = { ...entry, caption: trimmed };
+        return updated;
       });
     },
     [editingIndex, entries],
@@ -179,6 +206,7 @@ export function App({ datasetPath }: AppProps) {
             maxVisible={isEditing ? COMPACT_LIST_ROWS : listMaxVisible}
             disabled={isEditing}
             compact={isEditing}
+            mode={mode}
           />
         </Box>
 
@@ -192,15 +220,26 @@ export function App({ datasetPath }: AppProps) {
         {/* Caption editor (shown when editing) */}
         {isEditing && entries[editingIndex] && (
           <Box flexGrow={1} flexShrink={1} minHeight={0} overflow="hidden">
-            <CaptionEditor
-              entry={entries[editingIndex]}
-              allTags={allTags}
-              onSave={handleSave}
-              onNext={handleNext}
-              onPrev={handlePrev}
-              onClose={handleClose}
-              onActivity={requestRepaint}
-            />
+            {isNatural ? (
+              <NaturalCaptionEditor
+                entry={entries[editingIndex]}
+                onSave={handleSaveCaption}
+                onNext={handleNext}
+                onPrev={handlePrev}
+                onClose={handleClose}
+                onActivity={requestRepaint}
+              />
+            ) : (
+              <CaptionEditor
+                entry={entries[editingIndex]}
+                allTags={allTags}
+                onSave={handleSave}
+                onNext={handleNext}
+                onPrev={handlePrev}
+                onClose={handleClose}
+                onActivity={requestRepaint}
+              />
+            )}
           </Box>
         )}
       </Box>

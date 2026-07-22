@@ -3,11 +3,21 @@ import { basename, extname, join } from "node:path";
 
 const IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg"];
 
+/**
+ * Two ways to caption a dataset:
+ * - "tags":    comma-separated keywords (the classic booru-style format)
+ * - "natural": free-form prose describing the image
+ */
+export type CaptionMode = "tags" | "natural";
+
 export interface ImageEntry {
   name: string;
   imagePath: string;
   captionPath: string;
+  /** Parsed comma-separated tags (used in tag mode). */
   tags: string[];
+  /** Raw caption text (used in natural-language mode). */
+  caption: string;
 }
 
 export async function loadDataset(dirPath: string): Promise<ImageEntry[]> {
@@ -23,20 +33,27 @@ export async function loadDataset(dirPath: string): Promise<ImageEntry[]> {
     const imagePath = join(dirPath, imageFile);
     const captionPath = join(dirPath, `${name}.txt`);
 
-    const tags = await loadTags(captionPath);
-    entries.push({ name, imagePath, captionPath, tags });
+    // Read the file once and derive both views so the same dataset can be
+    // opened in either mode without a reload.
+    const content = await loadCaptionText(captionPath);
+    entries.push({
+      name,
+      imagePath,
+      captionPath,
+      tags: parseTags(content),
+      caption: content.trim(),
+    });
   }
 
   return entries.sort((a, b) => a.name.localeCompare(b.name));
 }
 
-export async function loadTags(captionPath: string): Promise<string[]> {
+export async function loadCaptionText(captionPath: string): Promise<string> {
   try {
     const file = Bun.file(captionPath);
-    const content = await file.text();
-    return parseTags(content);
+    return await file.text();
   } catch {
-    return [];
+    return "";
   }
 }
 
@@ -57,6 +74,13 @@ export async function saveTags(
   tags: string[],
 ): Promise<void> {
   await Bun.write(captionPath, formatTags(tags));
+}
+
+export async function saveCaption(
+  captionPath: string,
+  caption: string,
+): Promise<void> {
+  await Bun.write(captionPath, caption.trim());
 }
 
 export function collectAllTags(entries: ImageEntry[]): Set<string> {

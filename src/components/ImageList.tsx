@@ -1,5 +1,5 @@
 import { Box, Text, useInput } from "ink";
-import type { ImageEntry } from "../utils/dataset.js";
+import type { CaptionMode, ImageEntry } from "../utils/dataset.js";
 
 interface ImageListProps {
   entries: ImageEntry[];
@@ -9,12 +9,18 @@ interface ImageListProps {
   maxVisible?: number;
   disabled?: boolean;
   compact?: boolean;
+  mode?: CaptionMode;
 }
 
-function getTagColor(count: number): string {
+function getCountColor(count: number): string {
   if (count === 0) return "red";
   if (count <= 3) return "yellow";
   return "green";
+}
+
+function wordCount(caption: string): number {
+  const trimmed = caption.trim();
+  return trimmed ? trimmed.split(/\s+/).length : 0;
 }
 
 function truncate(str: string, maxLen: number): string {
@@ -30,7 +36,9 @@ export function ImageList({
   maxVisible = 15,
   disabled = false,
   compact = false,
+  mode = "tags",
 }: ImageListProps) {
+  const isNatural = mode === "natural";
   useInput(
     (input, key) => {
       if (disabled) return;
@@ -69,10 +77,14 @@ export function ImageList({
       {visibleEntries.map((entry, i) => {
         const actualIndex = startIndex + i;
         const isSelected = actualIndex === selectedIndex;
-        const tagCount = entry.tags.length;
-        const tagColor = getTagColor(tagCount);
-        const tagPreview =
-          entry.tags.length > 0 ? entry.tags.join(", ") : "(no tags)";
+        const count = isNatural ? wordCount(entry.caption) : entry.tags.length;
+        const countColor = getCountColor(count);
+        const emptyLabel = isNatural ? "(no caption)" : "(no tags)";
+        const preview = isNatural
+          ? entry.caption || emptyLabel
+          : entry.tags.length > 0
+            ? entry.tags.join(", ")
+            : emptyLabel;
 
         return (
           <Box key={entry.imagePath}>
@@ -87,15 +99,15 @@ export function ImageList({
               {entry.name.padEnd(30)}
             </Text>
             <Text
-              color={tagColor}
+              color={countColor}
               inverse={isSelected}
               dimColor={!isSelected && compact}
             >
-              [{tagCount.toString().padStart(2)}]
+              [{count.toString().padStart(2)}]
             </Text>
             <Text dimColor={!isSelected} inverse={isSelected}>
               {" "}
-              {truncate(tagPreview, 60)}
+              {truncate(preview, 60)}
             </Text>
           </Box>
         );

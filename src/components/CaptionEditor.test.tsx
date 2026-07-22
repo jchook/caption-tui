@@ -8,6 +8,7 @@ const entry: ImageEntry = {
   imagePath: "/tmp/img_003.png",
   captionPath: "/tmp/img_003.txt",
   tags: ["person", "portrait", "outdoors"],
+  caption: "person, portrait, outdoors",
 };
 
 const flush = () => new Promise((r) => setTimeout(r, 15));
@@ -47,6 +48,31 @@ test("typed characters accumulate and save (no dropped keys with onActivity)", a
   expect(captured.saved).toEqual(["person", "portrait", "outdoors", "zzq"]);
   // onActivity fires on every keypress (z, z, q, Enter, Esc = 5).
   expect(activity).toBe(5);
+});
+
+test("rapid typing (no render between keys) keeps every character", async () => {
+  const captured: { saved: string[] | null } = { saved: null };
+  const { stdin } = render(
+    <CaptionEditor
+      entry={{ ...entry, tags: [] }}
+      allTags={new Set()}
+      onSave={(tags) => {
+        captured.saved = tags;
+      }}
+      onNext={() => {}}
+      onPrev={() => {}}
+      onClose={() => {}}
+    />,
+  );
+
+  await flush();
+  // Write each key back-to-back without awaiting a re-render between them.
+  for (const ch of "sunset") stdin.write(ch);
+  await flush();
+  stdin.write("\x1b"); // Esc -> save pending tag
+  await flush();
+
+  expect(captured.saved).toEqual(["sunset"]);
 });
 
 test("comma commits a tag mid-stream", async () => {
