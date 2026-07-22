@@ -1,5 +1,6 @@
 import { Box, Text, useInput } from "ink";
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { useExternalEditor } from "../hooks/useExternalEditor.js";
 import type { ImageEntry } from "../utils/dataset.js";
 import { currentWordAt, getWordSuggestions } from "../utils/dataset.js";
 
@@ -36,6 +37,7 @@ export function NaturalCaptionEditor({
   const [text, setText] = useState(entry.caption);
   const [cursor, setCursor] = useState(entry.caption.length);
   const [selectedSuggestion, setSelectedSuggestion] = useState(0);
+  const launchExternalEditor = useExternalEditor();
 
   // Reset state when the image changes.
   useEffect(() => {
@@ -63,6 +65,19 @@ export function NaturalCaptionEditor({
     : "";
 
   const saveNow = useCallback(() => onSave(text), [onSave, text]);
+
+  const openInExternalEditor = useCallback(() => {
+    launchExternalEditor(text).then((edited) => {
+      if (edited === null) return;
+      setText(edited);
+      setCursor(edited.length);
+      setSelectedSuggestion(0);
+      onSave(edited);
+      // The screen was torn down/resized while $EDITOR ran; nudge the parent
+      // to re-transmit the image preview.
+      onActivity?.();
+    });
+  }, [launchExternalEditor, text, onSave, onActivity]);
 
   const acceptSuggestion = useCallback(() => {
     if (!ghostText) return false;
@@ -92,6 +107,13 @@ export function NaturalCaptionEditor({
     if (key.escape) {
       saveNow();
       onClose();
+      return;
+    }
+
+    // Ctrl-G: hand off to $EDITOR (real vim/nvim, your config). In tmux this
+    // opens in a split so the image stays visible up top.
+    if (key.ctrl && input === "g") {
+      openInExternalEditor();
       return;
     }
 
@@ -179,7 +201,10 @@ export function NaturalCaptionEditor({
         <Text bold color="cyan">
           {entry.name}
         </Text>
-        <Text dimColor> - Tab: complete, Enter/↑↓: nav, Esc: close</Text>
+        <Text dimColor>
+          {" "}
+          - Tab: complete, Enter/↑↓: nav, ^G: $EDITOR, Esc: close
+        </Text>
       </Box>
 
       <Box flexWrap="wrap">

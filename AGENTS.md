@@ -21,8 +21,10 @@ CLI tool for managing image caption files (used for training image models). Give
 - `src/App.tsx` - Main app component with state management
 - `src/components/ImageList.tsx` - Scrollable image list with color-coded tag/word counts
 - `src/components/CaptionEditor.tsx` - Tag editor with autocomplete
-- `src/components/NaturalCaptionEditor.tsx` - Prose editor with per-word autocomplete
+- `src/components/NaturalCaptionEditor.tsx` - Prose editor with per-word autocomplete + $EDITOR handoff
+- `src/hooks/useExternalEditor.ts` - Ctrl-G handoff to $EDITOR (tmux split or full-screen)
 - `src/utils/dataset.ts` - Dataset loading, tag/prose parsing, autocomplete + stopwords
+- `src/utils/inkControl.ts` - Bridge to the Ink instance's clear() for full repaints
 
 ## Install
 
@@ -45,7 +47,16 @@ caption-tui --natural /path/to/dataset  # natural-language mode
 
 **Tag edit mode**: Enter/Tab to accept suggestion, comma to add tag, ↑↓ to navigate images, Esc to close
 
-**Natural edit mode**: Tab/→ to complete the current word, Enter to save & go to next image, ↑↓ to navigate images (or suggestions while typing), ←/→ to move the cursor, Esc to close
+**Natural edit mode**: Tab/→ to complete the current word, Enter to save & go to next image, ↑↓ to navigate images (or suggestions while typing), ←/→ to move the cursor, Ctrl-G to edit in `$EDITOR`, Esc to close
+
+### `$EDITOR` handoff (Ctrl-G)
+
+In natural mode, Ctrl-G opens the caption in the user's `$VISUAL`/`$EDITOR` (real vim/nvim, their config). Implemented in `src/hooks/useExternalEditor.ts`:
+
+- **Inside tmux** (`$TMUX` set): opens the editor in a `tmux split-window` below, so the image preview stays visible in the top pane. The main process stays on the event loop (async) and blocks on a `tmux wait-for` channel signaled when the editor pane closes.
+- **Otherwise**: full-screen — drops raw mode, leaves the alt screen, runs the editor with inherited stdio, then re-enters the alt screen and calls `inkControl.clear()` (wired in `index.ts`) to force a full Ink repaint.
+
+Editor content is normalized back to a single line (captions are single-line prose).
 
 ## Caption Format
 

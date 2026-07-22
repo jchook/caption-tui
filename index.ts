@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import { render } from "ink";
 import React from "react";
 import { App } from "./src/App.js";
+import { inkControl } from "./src/utils/inkControl.js";
 
 const args = process.argv.slice(2);
 
@@ -41,6 +42,8 @@ Controls (natural mode edit):
   Enter            Save and go to next image
   ↑/↓              Prev/next image (or navigate suggestions if shown)
   ←/→              Move the cursor
+  Ctrl-G           Edit in $EDITOR (opens in a tmux split when inside tmux,
+                   keeping the image preview visible; full-screen otherwise)
   Esc              Close editor (saves changes)
 
 Captions are stored in {imagename}.txt files (comma-separated tags, or prose
@@ -87,9 +90,12 @@ enterAltScreen();
 // isn't left stuck on the alternate buffer.
 process.on("exit", leaveAltScreen);
 
-const { waitUntilExit } = render(
-  React.createElement(App, { datasetPath, mode }),
-);
+const instance = render(React.createElement(App, { datasetPath, mode }));
+const { waitUntilExit } = instance;
+
+// Expose a full-repaint hook for the external-editor handoff (Ctrl-G), which
+// leaves and re-enters the alt screen and needs Ink to redraw from scratch.
+inkControl.clear = instance.clear;
 
 waitUntilExit()
   .catch(() => {})
