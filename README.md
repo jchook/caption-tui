@@ -1,26 +1,26 @@
 # caption-tui
 
-A blazingly fast TUI for hand-captioning image datasets. Because your LoRA won't train itself.
+A keyboard-driven TUI for captioning image datasets — tag a whole folder from the terminal, without opening files one at a time.
 
 ![Ink](https://img.shields.io/badge/built%20with-Ink-blue)
-![Bun](https://img.shields.io/badge/runtime-Bun-f9f1e1)
+![Node](https://img.shields.io/badge/runtime-Node-339933)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
 ## Why?
 
-You've got 500 images. Each needs tags. You *could* open each `.txt` file in vim like a caveman, or you could:
+You've got 500 images, each needing a `.txt` of tags. Instead of opening every file by hand, do the whole folder from one view:
 
-- See inline image previews (Kitty, iTerm2, Sixel, or fallback)
+- Inline image previews (Kitty, iTerm2, Sixel, or fallback)
 - Autocomplete from your existing tags
-- Fly through images with keyboard shortcuts
-- Never touch your mouse
+- Move between images with keyboard shortcuts
+- Stays in the terminal — no mouse, no context switch
 
 ## Install
 
-Requires [Bun](https://bun.sh) >= 1.0.0
+Requires [Node](https://nodejs.org) >= 22
 
 ```bash
-bun install -g caption-tui
+pnpm add -g caption-tui
 ```
 
 ## Usage
@@ -86,7 +86,3 @@ person, portrait, outdoors, natural lighting, looking at viewer
 ## License
 
 MIT
-
----
-
-*Now go caption those images. Your model is waiting.*

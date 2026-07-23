@@ -11,9 +11,9 @@ CLI tool for managing image caption files (used for training image models). Give
 
 ## Tech Stack
 
-- **Runtime**: Bun (use `bun` instead of `node`, `bun test` instead of jest, etc.)
+- **Runtime**: Node (>= 22), managed with **pnpm**. Run TS directly in dev with `tsx` (`pnpm start` → `tsx index.ts`); ship a compiled `dist/` build (`pnpm build` → `tsc -p tsconfig.build.json`). Tests use the built-in Node test runner (`pnpm test` → `node --import tsx --test`).
 - **TUI Framework**: Ink + React for terminal UI
-- **Image Preview**: ink-picture (supports Kitty, iTerm2, Sixel, and fallback rendering)
+- **Image Preview**: ink-picture (supports Kitty, iTerm2, Sixel, and fallback rendering). Graphics capabilities are probed up front in `src/utils/terminalProbe.ts` (ink-picture's own in-render detection is unreliable) and fed to `InkPictureProvider` as a `terminalInfo` override.
 
 ## Key Files
 
@@ -25,14 +25,33 @@ CLI tool for managing image caption files (used for training image models). Give
 - `src/hooks/useExternalEditor.ts` - Ctrl-G handoff to $EDITOR (tmux split or full-screen)
 - `src/utils/dataset.ts` - Dataset loading, tag/prose parsing, tag autocomplete
 - `src/utils/textNav.ts` - Word-wise cursor movement / deletion for the prose editor
+- `src/utils/terminalProbe.ts` - Startup probe for kitty/sixel support + cell pixel size
 - `src/utils/inkControl.ts` - Bridge to the Ink instance's clear() for full repaints
 
 ## Install
 
-Requires [Bun](https://bun.sh) >= 1.0.0
+Requires Node >= 22. `pnpm` is the default, but `npm` works — swap `pnpm` → `npm`
+(prefix scripts with `run`, e.g. `npm run dev`).
 
 ```bash
-bun install -g caption-tui
+pnpm add -g caption-tui   # from the registry
+```
+
+## Development
+
+```bash
+pnpm install              # deps (prepare hook also builds dist/)
+pnpm start <dataset>      # run from source via tsx, no build
+pnpm test                 # node --test
+pnpm build                # compile to dist/
+```
+
+Local global binary — `caption-tui` runs the compiled `dist/`, so link it and keep
+a watch build running for live edits:
+
+```bash
+pnpm link --global        # once; symlinks caption-tui -> dist/index.js (npm: `npm link`)
+pnpm dev                  # tsc --watch; recompiles dist/ on save
 ```
 
 ## Usage
