@@ -1,4 +1,5 @@
-import { expect, test } from "bun:test";
+import assert from "node:assert/strict";
+import { test } from "node:test";
 import { render } from "ink-testing-library";
 import type { ImageEntry } from "../utils/dataset.js";
 import { NaturalCaptionEditor } from "./NaturalCaptionEditor.js";
@@ -50,7 +51,7 @@ test("typed characters accumulate into prose and save on Esc", async () => {
   await type(stdin, "a red car");
   stdin.write("\x1b"); // Esc -> save & close
   await flush();
-  expect(captured.saved).toBe("a red car");
+  assert.equal(captured.saved, "a red car");
 });
 
 test("rapid typing (no render between keys) keeps every character", async () => {
@@ -62,7 +63,7 @@ test("rapid typing (no render between keys) keeps every character", async () => 
   await flush();
   stdin.write("\x1b");
   await flush();
-  expect(captured.saved).toBe("view from above");
+  assert.equal(captured.saved, "view from above");
 });
 
 test("Enter saves the current caption and advances", async () => {
@@ -71,8 +72,8 @@ test("Enter saves the current caption and advances", async () => {
   await type(stdin, "hello");
   stdin.write("\r"); // Enter -> save & next
   await flush();
-  expect(captured.saved).toBe("hello");
-  expect(captured.nexts).toBe(1);
+  assert.equal(captured.saved, "hello");
+  assert.equal(captured.nexts, 1);
 });
 
 test("Ctrl-A jumps to start; typing inserts there", async () => {
@@ -84,7 +85,7 @@ test("Ctrl-A jumps to start; typing inserts there", async () => {
   await type(stdin, "X");
   stdin.write("\x1b");
   await flush();
-  expect(captured.saved).toBe("Xworld");
+  assert.equal(captured.saved, "Xworld");
 });
 
 test("Ctrl-E jumps to end after Ctrl-A", async () => {
@@ -98,7 +99,7 @@ test("Ctrl-E jumps to end after Ctrl-A", async () => {
   await type(stdin, "!");
   stdin.write("\x1b");
   await flush();
-  expect(captured.saved).toBe("world!");
+  assert.equal(captured.saved, "world!");
 });
 
 test("Ctrl-W deletes the word before the cursor", async () => {
@@ -110,5 +111,5 @@ test("Ctrl-W deletes the word before the cursor", async () => {
   stdin.write("\x1b");
   await flush();
   // Editor keeps the trailing space; the app trims it on persist (saveCaption).
-  expect(captured.saved).toBe("big red ");
+  assert.equal(captured.saved, "big red ");
 });

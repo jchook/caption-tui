@@ -1,10 +1,11 @@
-#!/usr/bin/env bun
+#!/usr/bin/env node
 
 import { resolve } from "node:path";
 import { render } from "ink";
 import React from "react";
 import { App } from "./src/App.js";
 import { inkControl } from "./src/utils/inkControl.js";
+import { probeTerminal } from "./src/utils/terminalProbe.js";
 
 const args = process.argv.slice(2);
 
@@ -90,7 +91,25 @@ enterAltScreen();
 // isn't left stuck on the alternate buffer.
 process.on("exit", leaveAltScreen);
 
-const instance = render(React.createElement(App, { datasetPath, mode }));
+// Probe graphics capabilities before Ink takes over stdin. ink-picture's own
+// detection runs lazily from inside the render and competes with Ink for stdin,
+// so it often misses the terminal's responses; probing up front (while we still
+// fully own stdin) reliably detects kitty/sixel + the real cell pixel size, which
+// we hand to InkPictureProvider as an authoritative override.
+const terminalInfo = await probeTerminal();
+
+// App renders one row short of the terminal height (see appRows in App.tsx) so
+// Ink stays on its standard render path instead of the fullscreen one. The
+// fullscreen path repaints every frame with ansiEscapes.clearTerminal, which
+// wipes the kitty/sixel graphic permanently; the standard path instead skips
+// writing entirely when the frame is unchanged (so the image survives at rest)
+// and does a clean full erase+rewrite when it does change (so nothing stale is
+// left behind). We deliberately do NOT use incrementalRendering here: its
+// per-line diffing desyncs from kitty's absolute-cursor, unclipped drawing and
+// corrupts the text below the image (stacked borders, overlapping rows).
+const instance = render(
+  React.createElement(App, { datasetPath, mode, terminalInfo }),
+);
 const { waitUntilExit } = instance;
 
 // Expose a full-repaint hook for the external-editor handoff (Ctrl-G), which

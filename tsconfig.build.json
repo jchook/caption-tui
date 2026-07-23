@@ -1,0 +1,18 @@
+{
+  // Build config: emits runnable JS to dist/ for `npm i -g .` under Node.
+  // The base tsconfig.json is bundler-mode + noEmit (for `tsx` dev + tsc
+  // typecheck); this one flips to Node ESM output.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "outDir": "dist",
+    "rootDir": ".",
+    "module": "NodeNext",
+    "moduleResolution": "nodenext",
+    "allowImportingTsExtensions": false,
+    "sourceMap": true,
+    "declaration": false
+  },
+  "include": ["index.ts", "src/**/*.ts", "src/**/*.tsx"],
+  "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx"]
+}

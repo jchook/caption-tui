@@ -1,4 +1,4 @@
-import { readdir } from "node:fs/promises";
+import { readdir, readFile, writeFile } from "node:fs/promises";
 import { basename, extname, join } from "node:path";
 
 const IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg"];
@@ -50,8 +50,7 @@ export async function loadDataset(dirPath: string): Promise<ImageEntry[]> {
 
 export async function loadCaptionText(captionPath: string): Promise<string> {
   try {
-    const file = Bun.file(captionPath);
-    return await file.text();
+    return await readFile(captionPath, "utf8");
   } catch {
     return "";
   }
@@ -73,14 +72,14 @@ export async function saveTags(
   captionPath: string,
   tags: string[],
 ): Promise<void> {
-  await Bun.write(captionPath, formatTags(tags));
+  await writeFile(captionPath, formatTags(tags));
 }
 
 export async function saveCaption(
   captionPath: string,
   caption: string,
 ): Promise<void> {
-  await Bun.write(captionPath, caption.trim());
+  await writeFile(captionPath, caption.trim());
 }
 
 export function collectAllTags(entries: ImageEntry[]): Set<string> {

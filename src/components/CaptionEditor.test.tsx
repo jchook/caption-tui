@@ -1,4 +1,5 @@
-import { expect, test } from "bun:test";
+import assert from "node:assert/strict";
+import { test } from "node:test";
 import { render } from "ink-testing-library";
 import type { ImageEntry } from "../utils/dataset.js";
 import { CaptionEditor } from "./CaptionEditor.js";
@@ -44,10 +45,10 @@ test("typed characters accumulate and save (no dropped keys with onActivity)", a
   stdin.write("\x1b"); // Esc -> save & close
   await flush();
 
-  expect(captured.saved).not.toBeNull();
-  expect(captured.saved).toEqual(["person", "portrait", "outdoors", "zzq"]);
+  assert.notEqual(captured.saved, null);
+  assert.deepEqual(captured.saved, ["person", "portrait", "outdoors", "zzq"]);
   // onActivity fires on every keypress (z, z, q, Enter, Esc = 5).
-  expect(activity).toBe(5);
+  assert.equal(activity, 5);
 });
 
 test("rapid typing (no render between keys) keeps every character", async () => {
@@ -72,7 +73,7 @@ test("rapid typing (no render between keys) keeps every character", async () => 
   stdin.write("\x1b"); // Esc -> save pending tag
   await flush();
 
-  expect(captured.saved).toEqual(["sunset"]);
+  assert.deepEqual(captured.saved, ["sunset"]);
 });
 
 test("comma commits a tag mid-stream", async () => {
@@ -104,5 +105,5 @@ test("comma commits a tag mid-stream", async () => {
   stdin.write("\x1b"); // Esc saves "sky" + pending "sea"
   await flush();
 
-  expect(captured.saved).toEqual(["sky", "sea"]);
+  assert.deepEqual(captured.saved, ["sky", "sea"]);
 });
