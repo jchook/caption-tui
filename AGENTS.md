@@ -13,7 +13,7 @@ CLI tool for managing image caption files (used for training image models). Give
 
 - **Runtime**: Node (>= 22), managed with **pnpm**. Run TS directly in dev with `tsx` (`pnpm start` → `tsx index.ts`); ship a compiled `dist/` build (`pnpm build` → `tsc -p tsconfig.build.json`). Tests use the built-in Node test runner (`pnpm test` → `node --import tsx --test`).
 - **TUI Framework**: Ink + React for terminal UI
-- **Image Preview**: ink-picture (supports Kitty, iTerm2, Sixel, and fallback rendering). Graphics capabilities are probed up front in `src/utils/terminalProbe.ts` (ink-picture's own in-render detection is unreliable) and fed to `InkPictureProvider` as a `terminalInfo` override.
+- **Image Preview**: two renderers, chosen by the startup probe in `src/utils/terminalProbe.ts` — our own kitty Unicode-placeholder component when kitty is reachable, otherwise ink-picture's text-based protocols (half-block/braille/ascii). See [Image Preview Architecture](#image-preview-architecture).
 
 ## Key Files
 
@@ -22,11 +22,14 @@ CLI tool for managing image caption files (used for training image models). Give
 - `src/components/ImageList.tsx` - Scrollable image list with color-coded tag/word counts
 - `src/components/CaptionEditor.tsx` - Tag editor with autocomplete
 - `src/components/NaturalCaptionEditor.tsx` - Prose editor (emacs-style keys) + $EDITOR handoff
+- `src/components/KittyPlaceholderImage.tsx` - Preview via kitty Unicode placeholders
 - `src/hooks/useExternalEditor.ts` - Ctrl-G handoff to $EDITOR (tmux split or full-screen)
 - `src/utils/dataset.ts` - Dataset loading, tag/prose parsing, tag autocomplete
 - `src/utils/textNav.ts` - Word-wise cursor movement / deletion for the prose editor
+- `src/utils/kittyPlaceholder.ts` - Kitty graphics encoder (diacritics, transmit, tmux passthrough)
 - `src/utils/terminalProbe.ts` - Startup probe for kitty/sixel support + cell pixel size
 - `src/utils/inkControl.ts` - Bridge to the Ink instance's clear() for full repaints
+- `scripts/kitty-smoke-test.ts` - Standalone check that kitty graphics reach the terminal
 
 ## Install
 
@@ -90,9 +93,82 @@ person, portrait, outdoors, natural lighting
 A person in a portrait pose outdoors under natural lighting.
 ```
 
+## Image Preview Architecture
+
+Two renderers, picked by `probeTerminal()` at startup:
+
+1. **kitty Unicode placeholders** (`KittyPlaceholderImage`) whenever kitty is reachable.
+2. **ink-picture** for everything else — half-block/braille/ascii.
+
+### Why we don't use ink-picture's kitty renderer
+
+ink-picture's `KittyImage` uses *direct placement*: it saves the cursor, walks it
+to absolute screen coordinates, emits `a=p,C=1`, then restores. The image is
+pinned to screen coordinates and invisible to Ink's layout, so it isn't clipped
+by `overflow: hidden`, doesn't move when the frame is rewritten, and is wiped by
+any full-screen erase. **It also cannot work inside tmux at all** — tmux does not
+implement the kitty graphics protocol, and ink-picture does not wrap its escape
+codes for passthrough.
+
+This caused years of symptoms (flashing/vanishing previews, images painting over
+the editor, blank panes in tmux) and a stack of workarounds — repaint timers,
+`getVisibility` overrides, rendering the preview one row short. All of that is
+now deleted.
+
+### How Unicode placeholders work
+
+This is kitty's documented mechanism for exactly this problem (kitty ≥ 0.28,
+`graphics-protocol.rst` § "Unicode placeholders"): images displayed inside host
+applications that know nothing about the graphics protocol, *including tmux*.
+
+1. Transmit the PNG in quiet mode (`q=2`) and create a **virtual** placement
+   (`a=T,U=1,i=<id>,c=<cols>,r=<rows>`). Virtual placements are invisible
+   prototypes with no screen position.
+2. Render ordinary text: a grid of `U+10EEEE` cells whose combining diacritics
+   encode each cell's (row, column), with the image ID in the foreground color.
+
+The preview is then **just text**, so Ink lays it out, clips it, and repaints it
+like any other component. Nothing touches the cursor.
+
+Two non-obvious constraints, both enforced by tests:
+
+- **Image IDs are 8-bit, sent as `ESC[38;5;<id>m`** — not 24-bit truecolor.
+  Under `TERM=screen-256color`, tmux downgrades truecolor to the nearest palette
+  entry unless it advertises `RGB`/`Tc`, which would silently rewrite the image
+  ID and leave placeholders pointing at nothing.
+- **Every cell carries explicit row *and* column diacritics.** Kitty allows
+  omitting them and inheriting from the cell to the left, but Ink repaints
+  arbitrary line fragments, so a cell may be redrawn without its left neighbor.
+
+### tmux requirement
+
+Inside tmux, graphics escape codes are wrapped as `ESC Ptmux; … ESC \` with every
+inner `ESC` doubled. tmux only forwards these when passthrough is enabled:
+
+```bash
+tmux set -g allow-passthrough on          # add to ~/.tmux.conf to persist
+```
+
+Without it the app falls back to text rendering and shows a one-line hint rather
+than failing silently. Detection inside tmux does **not** use escape codes (the
+query never round-trips); it asks tmux directly via `client_termname` and
+`client_cell_width`/`client_cell_height`, which also stay correct across
+detach/reattach to a different terminal.
+
+### Debugging
+
+```bash
+pnpm tsx scripts/kitty-smoke-test.ts [image]   # bypasses Ink entirely
+CAPTION_TUI_DEBUG=1 caption-tui <dataset>      # logs probe + chosen renderer
+```
+
+The smoke test prints the placeholder grid with plain `console.log`, so if it
+works but the TUI doesn't, the bug is in the Ink layer, not the protocol.
+
 ## ink-picture Gotcha
 
-The Image component sizes itself to fit its container, not via its own props:
+Applies to the fallback path only. The Image component sizes itself to fit its
+container, not via its own props:
 
 ```tsx
 // ✅ Works

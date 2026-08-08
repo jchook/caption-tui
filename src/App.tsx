@@ -1,13 +1,10 @@
 import { appendFileSync } from "node:fs";
 import { Box, Text, useApp, useInput } from "ink";
-import Image, {
-  type GetVisibility,
-  InkPictureProvider,
-  type TerminalInfo,
-} from "ink-picture";
+import Image, { InkPictureProvider, type TerminalInfo } from "ink-picture";
 import { useCallback, useEffect, useState } from "react";
 import { CaptionEditor } from "./components/CaptionEditor.js";
 import { ImageList } from "./components/ImageList.js";
+import { KittyPlaceholderImage } from "./components/KittyPlaceholderImage.js";
 import { NaturalCaptionEditor } from "./components/NaturalCaptionEditor.js";
 import { useTerminalSize } from "./hooks/useTerminalSize.js";
 import {
@@ -18,6 +15,7 @@ import {
   saveCaption,
   saveTags,
 } from "./utils/dataset.js";
+import type { TerminalProbeResult } from "./utils/terminalProbe.js";
 
 // Rows reserved (outside the scrollable image list) for the list header and
 // the "Showing X-Y of Z" footer when browsing.
@@ -32,12 +30,10 @@ interface AppProps {
   datasetPath: string;
   mode?: CaptionMode;
   // Graphics capabilities probed at startup (see src/utils/terminalProbe.ts).
-  // Passed through to InkPictureProvider as an authoritative override because
-  // ink-picture's own in-render detection is unreliable (it races Ink for stdin).
-  terminalInfo?: Partial<TerminalInfo>;
+  graphics?: TerminalProbeResult;
 }
 
-export function App({ datasetPath, mode = "tags", terminalInfo }: AppProps) {
+export function App({ datasetPath, mode = "tags", graphics }: AppProps) {
   const isNatural = mode === "natural";
   const { exit } = useApp();
   const { rows, columns } = useTerminalSize();
@@ -48,43 +44,31 @@ export function App({ datasetPath, mode = "tags", terminalInfo }: AppProps) {
   const [error, setError] = useState<string | null>(null);
   // Tag mode autocompletes against known tags. Natural mode has no autocomplete.
   const [allTags, setAllTags] = useState<Set<string>>(new Set());
-  // Bumped on every editor keystroke to force a re-render. As of ink-picture v2
-  // this is mostly redundant: InkPictureProvider repaints the graphic after every
-  // React commit (via a Profiler), so the kitty/sixel image survives Ink's frame
-  // rewrites without our help. Kept as a cheap belt-and-suspenders nudge.
-  const [, setRepaintTick] = useState(0);
-  const requestRepaint = useCallback(() => {
-    setRepaintTick((t) => (t + 1) % 1_000_000);
-  }, []);
 
-  // ink-picture draws the kitty graphic in a post-render effect that only paints
-  // once the preview box's measured position has settled. On the first Enter, the
-  // browse->edit layout transition can leave that final position without a trailing
-  // render, so the graphic is never placed and you're left staring at the bare
-  // "Loading..." placeholder until you navigate (which forces a re-render). Nudging
-  // a few repaints after the edited image changes makes the placement re-run once
-  // the layout settles -- no manual scroll needed. (Navigating fires this too; it's
-  // harmless there since the image is already placed.)
-  useEffect(() => {
-    if (editingIndex === null) return;
-    const timers = [50, 150, 400].map((ms) => setTimeout(requestRepaint, ms));
-    return () => {
-      for (const t of timers) clearTimeout(t);
-    };
-  }, [editingIndex, requestRepaint]);
+  // With kitty available we render the preview ourselves via Unicode
+  // placeholders, which are plain text and therefore need none of the repaint
+  // nudging, visibility overriding or layout padding that direct-placement
+  // graphics did. Everything else falls through to ink-picture's text-based
+  // protocols (half-block/braille/ascii), which have always worked fine.
+  const useKittyPlaceholders = graphics?.supportsKittyGraphics === true;
 
-  // ink-picture v2 downgrades to a pixelated half-block/braille fallback whenever
-  // it computes the image box as anything less than fully on-screen ("partial").
-  // Our fullscreen layout always keeps the whole preview within the app bounds, so
-  // a "partial" reading here is a spurious edge-of-screen artifact. Treat anything
-  // visible as "full" so the native graphics protocol (kitty/sixel/iTerm2) is used;
-  // terminals without graphics support still fall back correctly, since the base
-  // protocol they resolve to is already half-block/braille/ascii.
-  const keepGraphics = useCallback<GetVisibility>(
-    ({ defaultVisibility }) =>
-      defaultVisibility === "hidden" ? "hidden" : "full",
-    [],
-  );
+  // ink-picture only sees the fallback path, so hand it just what it needs.
+  // The measured cell size is spread in only when we actually have it:
+  // InkPictureProvider merges overrides with `{...defaults, ...overrides}`, so
+  // an explicit `undefined` would wipe out its own default rather than defer
+  // to it.
+  const terminalInfo: Partial<TerminalInfo> | undefined = graphics
+    ? {
+        ...(graphics.cellWidth !== undefined && {
+          cellWidth: graphics.cellWidth,
+        }),
+        ...(graphics.cellHeight !== undefined && {
+          cellHeight: graphics.cellHeight,
+        }),
+        supportsKittyGraphics: graphics.supportsKittyGraphics,
+        supportsSixelGraphics: graphics.supportsSixelGraphics,
+      }
+    : undefined;
 
   // Diagnostic hook: set CAPTION_TUI_DEBUG=1 (or to a file path) to log what
   // ink-picture actually detected. stdout is owned by the TUI, so we append to a
@@ -111,13 +95,13 @@ export function App({ datasetPath, mode = "tags", terminalInfo }: AppProps) {
           logPath,
           // `probed` is our own startup probe (the source of truth we feed in);
           // `libDetected` is ink-picture's own in-render detection, for comparison.
-          `${JSON.stringify({ probed: terminalInfo, libDetected: info, env }, null, 2)}\n`,
+          `${JSON.stringify({ probed: graphics, renderer: useKittyPlaceholders ? "kitty-unicode-placeholders" : "ink-picture", libDetected: info, env }, null, 2)}\n`,
         );
       } catch {
         // Best-effort diagnostics only.
       }
     },
-    [terminalInfo],
+    [graphics, useKittyPlaceholders],
   );
 
   // Load dataset on mount
@@ -253,28 +237,22 @@ export function App({ datasetPath, mode = "tags", terminalInfo }: AppProps) {
 
   const isEditing = editingIndex !== null;
 
-  // Render one line short of the terminal height. When the app fills the whole
-  // screen, Ink treats every frame as "fullscreen" and repaints it with
-  // ansiEscapes.clearTerminal (ink.js) -- an unconditional screen clear that wipes
-  // the kitty/sixel graphic on every render, causing the image to flash and vanish.
-  // Staying one row under keeps Ink on its standard render path, which skips writes
-  // entirely when the frame is unchanged (so the graphic survives at rest). See the
-  // render() comment in index.ts for why we don't use incrementalRendering.
+  // Render one line short of the terminal height, which keeps Ink on its
+  // standard render path instead of the fullscreen one that repaints via
+  // ansiEscapes.clearTerminal on every frame. This is now purely about avoiding
+  // that per-frame whole-screen clear (and the flicker it causes) -- the preview
+  // itself no longer depends on it, because Unicode placeholders are just text
+  // and are redrawn correctly by any repaint.
   const appRows = Math.max(1, rows - 1);
   // Keep the whole app within the terminal so Ink's frame math stays aligned
   // (an overflowing frame is what garbles the list while scrolling).
   const listMaxVisible = Math.max(1, appRows - LIST_CHROME_ROWS);
-  // Preview height depends only on the terminal size, so the image's position
-  // never shifts while typing -> ink-picture doesn't re-transmit it (no flash).
+  // Preview height depends only on the terminal size, so the image never
+  // resizes (and never has to be re-transmitted) while you type.
   const previewHeight = Math.max(
     5,
     appRows - COMPACT_LIST_ROWS - EDITOR_MIN_ROWS,
   );
-  // Kitty positions its graphic with absolute cursor math and ignores Ink's
-  // overflow:hidden, so an image sized to *exactly* the preview box paints over
-  // the editor row right beneath it. Draw one row short of the reserved box so the
-  // graphic always lands inside its own pane, leaving a clean gap above the editor.
-  const previewImageHeight = Math.max(1, previewHeight - 1);
 
   return (
     <InkPictureProvider
@@ -304,17 +282,36 @@ export function App({ datasetPath, mode = "tags", terminalInfo }: AppProps) {
         {/* Image preview - rendered at top level */}
         {isEditing && entries[editingIndex] && (
           <Box height={previewHeight} flexShrink={0} width={columns}>
-            {/* Explicit cell dimensions (not width="100%") so ink-picture never
-                depends on measureElement, which races on mount and can resolve to
-                0 -> the decode is skipped and the pane hangs on "Loading...". This
-                also pins the image scale to exactly the preview box. */}
-            <Image
-              src={entries[editingIndex]?.imagePath ?? ""}
-              width={columns}
-              height={previewImageHeight}
-              objectFit="contain"
-              getVisibility={keepGraphics}
-            />
+            {useKittyPlaceholders ? (
+              <KittyPlaceholderImage
+                src={entries[editingIndex]?.imagePath ?? ""}
+                maxColumns={columns}
+                maxRows={previewHeight}
+                cellWidth={graphics?.cellWidth}
+                cellHeight={graphics?.cellHeight}
+                insideTmux={graphics?.insideTmux}
+              />
+            ) : (
+              /* Explicit cell dimensions (not width="100%") so ink-picture never
+                 depends on measureElement, which races on mount and can resolve to
+                 0 -> the decode is skipped and the pane hangs on "Loading...". */
+              <Image
+                src={entries[editingIndex]?.imagePath ?? ""}
+                width={columns}
+                height={previewHeight}
+                objectFit="contain"
+              />
+            )}
+          </Box>
+        )}
+
+        {/* kitty is right there, but tmux would eat the graphics escape codes.
+            Surface the one-line fix rather than silently dropping to blocks. */}
+        {isEditing && graphics?.kittyNeedsTmuxPassthrough && (
+          <Box flexShrink={0}>
+            <Text dimColor>
+              kitty images need: tmux set -g allow-passthrough on
+            </Text>
           </Box>
         )}
 
@@ -328,7 +325,6 @@ export function App({ datasetPath, mode = "tags", terminalInfo }: AppProps) {
                 onNext={handleNext}
                 onPrev={handlePrev}
                 onClose={handleClose}
-                onActivity={requestRepaint}
               />
             ) : (
               <CaptionEditor
@@ -338,7 +334,6 @@ export function App({ datasetPath, mode = "tags", terminalInfo }: AppProps) {
                 onNext={handleNext}
                 onPrev={handlePrev}
                 onClose={handleClose}
-                onActivity={requestRepaint}
               />
             )}
           </Box>

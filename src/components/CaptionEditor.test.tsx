@@ -14,9 +14,8 @@ const entry: ImageEntry = {
 
 const flush = () => new Promise((r) => setTimeout(r, 15));
 
-test("typed characters accumulate and save (no dropped keys with onActivity)", async () => {
+test("typed characters accumulate and save (a render between every key)", async () => {
   const captured: { saved: string[] | null } = { saved: null };
-  let activity = 0;
 
   const { stdin } = render(
     <CaptionEditor
@@ -28,9 +27,6 @@ test("typed characters accumulate and save (no dropped keys with onActivity)", a
       onNext={() => {}}
       onPrev={() => {}}
       onClose={() => {}}
-      onActivity={() => {
-        activity++;
-      }}
     />,
   );
 
@@ -47,8 +43,6 @@ test("typed characters accumulate and save (no dropped keys with onActivity)", a
 
   assert.notEqual(captured.saved, null);
   assert.deepEqual(captured.saved, ["person", "portrait", "outdoors", "zzq"]);
-  // onActivity fires on every keypress (z, z, q, Enter, Esc = 5).
-  assert.equal(activity, 5);
 });
 
 test("rapid typing (no render between keys) keeps every character", async () => {

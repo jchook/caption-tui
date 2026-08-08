@@ -14,12 +14,6 @@ interface NaturalCaptionEditorProps {
   onNext: () => void;
   onPrev: () => void;
   onClose: () => void;
-  /**
-   * Called on every keypress so the parent can re-render the image preview.
-   * ink-picture only re-draws its graphic when its component re-renders, and
-   * Ink repaints (and thus erases the graphic) on every keystroke.
-   */
-  onActivity?: () => void;
 }
 
 interface EditorState {
@@ -33,7 +27,6 @@ export function NaturalCaptionEditor({
   onNext,
   onPrev,
   onClose,
-  onActivity,
 }: NaturalCaptionEditorProps) {
   const [state, setState] = useState<EditorState>(() => ({
     text: entry.caption,
@@ -71,17 +64,10 @@ export function NaturalCaptionEditor({
       if (edited === null) return;
       update(() => ({ text: edited, cursor: edited.length }));
       onSave(edited);
-      // The screen was torn down/resized while $EDITOR ran; nudge the parent
-      // to re-transmit the image preview.
-      onActivity?.();
     });
-  }, [launchExternalEditor, update, onSave, onActivity]);
+  }, [launchExternalEditor, update, onSave]);
 
   useInput((input, key) => {
-    // Let the parent repaint the (kitty/sixel) image preview, which Ink erases
-    // on every frame.
-    onActivity?.();
-
     if (key.escape) {
       onSave(stateRef.current.text);
       onClose();

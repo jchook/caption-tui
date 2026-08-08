@@ -94,21 +94,19 @@ process.on("exit", leaveAltScreen);
 // Probe graphics capabilities before Ink takes over stdin. ink-picture's own
 // detection runs lazily from inside the render and competes with Ink for stdin,
 // so it often misses the terminal's responses; probing up front (while we still
-// fully own stdin) reliably detects kitty/sixel + the real cell pixel size, which
-// we hand to InkPictureProvider as an authoritative override.
-const terminalInfo = await probeTerminal();
+// fully own stdin) reliably detects kitty/sixel + the real cell pixel size.
+// The result picks the preview renderer: our kitty Unicode-placeholder
+// component when kitty is reachable, ink-picture's text protocols otherwise.
+const graphics = await probeTerminal();
 
 // App renders one row short of the terminal height (see appRows in App.tsx) so
-// Ink stays on its standard render path instead of the fullscreen one. The
-// fullscreen path repaints every frame with ansiEscapes.clearTerminal, which
-// wipes the kitty/sixel graphic permanently; the standard path instead skips
-// writing entirely when the frame is unchanged (so the image survives at rest)
-// and does a clean full erase+rewrite when it does change (so nothing stale is
-// left behind). We deliberately do NOT use incrementalRendering here: its
-// per-line diffing desyncs from kitty's absolute-cursor, unclipped drawing and
-// corrupts the text below the image (stacked borders, overlapping rows).
+// Ink stays on its standard render path instead of the fullscreen one, which
+// repaints every frame with ansiEscapes.clearTerminal and flickers. We also
+// deliberately do NOT use incrementalRendering: its per-line diffing has
+// historically desynced from graphics output and corrupted the text below the
+// preview (stacked borders, overlapping rows).
 const instance = render(
-  React.createElement(App, { datasetPath, mode, terminalInfo }),
+  React.createElement(App, { datasetPath, mode, graphics }),
 );
 const { waitUntilExit } = instance;
 

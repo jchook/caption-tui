@@ -10,12 +10,6 @@ interface CaptionEditorProps {
   onNext: () => void;
   onPrev: () => void;
   onClose: () => void;
-  /**
-   * Called on every keypress so the parent can re-render the image preview.
-   * ink-picture only re-draws its graphic when its component re-renders, and
-   * Ink repaints (and thus erases the graphic) on every keystroke.
-   */
-  onActivity?: () => void;
 }
 
 // The in-progress tag being typed, plus the cursor within it.
@@ -33,7 +27,6 @@ export function CaptionEditor({
   onNext,
   onPrev,
   onClose,
-  onActivity,
 }: CaptionEditorProps) {
   const [tags, setTags] = useState<string[]>(entry.tags);
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
@@ -124,10 +117,6 @@ export function CaptionEditor({
   }, [setTagsSynced]);
 
   useInput((input, key) => {
-    // Let the parent repaint the (kitty/sixel) image preview, which Ink erases
-    // on every frame.
-    onActivity?.();
-
     if (key.escape) {
       onSave(getCurrentTags());
       onClose();
