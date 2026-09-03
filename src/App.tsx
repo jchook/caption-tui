@@ -155,19 +155,23 @@ export function App({ datasetPath, mode = "tags", graphics }: AppProps) {
   // handed that entry to the editor. A burst of up/down keys advances
   // `editingIndex` several times before React re-renders, so a save keyed off
   // the *current* index would write the text still sitting in the editor into
-  // the file of an image it has already moved past. Rows are located by
-  // captionPath inside the updater, so a stale `entries` array can't misplace
-  // the update either.
+  // the file of an image it has already moved past.
+  //
+  // Every row pointing at the file we just wrote is refreshed, not just the one
+  // being edited: `image1.jpg` and `image1.png` in the same folder share a
+  // single `image1.txt`, so both rows show its contents and both must follow it.
+  // (Keying the update off a single captionPath match instead would land on the
+  // first of the two, leaving the row you actually edited stale -- and the
+  // editor would then reset to that stale text and revert the file on its next
+  // save.)
   const handleSave = useCallback(async (target: ImageEntry, tags: string[]) => {
     await saveTags(target.captionPath, tags);
 
-    setEntries((prev) => {
-      const idx = prev.findIndex((e) => e.captionPath === target.captionPath);
-      if (idx === -1) return prev;
-      const updated = [...prev];
-      updated[idx] = { ...prev[idx], tags } as ImageEntry;
-      return updated;
-    });
+    setEntries((prev) =>
+      prev.map((e) =>
+        e.captionPath === target.captionPath ? { ...e, tags } : e,
+      ),
+    );
 
     // Update allTags
     setAllTags((prev) => {
@@ -184,13 +188,11 @@ export function App({ datasetPath, mode = "tags", graphics }: AppProps) {
       const trimmed = caption.trim();
       await saveCaption(target.captionPath, trimmed);
 
-      setEntries((prev) => {
-        const idx = prev.findIndex((e) => e.captionPath === target.captionPath);
-        if (idx === -1) return prev;
-        const updated = [...prev];
-        updated[idx] = { ...prev[idx], caption: trimmed } as ImageEntry;
-        return updated;
-      });
+      setEntries((prev) =>
+        prev.map((e) =>
+          e.captionPath === target.captionPath ? { ...e, caption: trimmed } : e,
+        ),
+      );
     },
     [],
   );

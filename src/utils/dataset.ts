@@ -45,6 +45,23 @@ export async function loadDataset(dirPath: string): Promise<ImageEntry[]> {
     });
   }
 
+  // `image1.jpg` and `image1.png` in the same folder both resolve to a single
+  // `image1.txt`, so they share one caption. That is nearly always an accident,
+  // and two rows reading `image1` make it invisible -- qualify the colliding
+  // ones with their extension so the shared file is obvious in the list.
+  const perCaptionFile = new Map<string, number>();
+  for (const entry of entries) {
+    perCaptionFile.set(
+      entry.captionPath,
+      (perCaptionFile.get(entry.captionPath) ?? 0) + 1,
+    );
+  }
+  for (const entry of entries) {
+    if ((perCaptionFile.get(entry.captionPath) ?? 0) > 1) {
+      entry.name = basename(entry.imagePath);
+    }
+  }
+
   return entries.sort((a, b) => a.name.localeCompare(b.name));
 }
 

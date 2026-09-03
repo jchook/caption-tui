@@ -114,6 +114,17 @@ In natural mode, Ctrl-G opens the caption in the user's `$VISUAL`/`$EDITOR` (rea
 
 Editor content is normalized back to a single line (captions are single-line prose).
 
+## Duplicate basenames share a caption file
+
+`image1.jpg` and `image1.png` in one folder both resolve to a single
+`image1.txt`, so they are two rows over one caption. `loadDataset` qualifies
+those rows with their extension (`image1.jpg`, not `image1`) so the collision is
+visible, and a save refreshes **every** entry pointing at the file it wrote.
+Keying that update off one `captionPath` match instead lands it on the first of
+the pair: the row being edited keeps its old text, the editor resets to that
+stale text on the next render, and the following save reverts the file. Covered
+by `src/App.test.tsx` and `src/utils/dataset.test.ts`.
+
 ## Caption Format
 
 **Tag mode** — `{imagename}.txt` holds comma-separated values with spaces:
