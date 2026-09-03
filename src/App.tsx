@@ -3,6 +3,7 @@ import { Box, Text, useApp, useInput } from "ink";
 import Image, { InkPictureProvider, type TerminalInfo } from "ink-picture";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CaptionEditor } from "./components/CaptionEditor.js";
+import { DeleteConfirm } from "./components/DeleteConfirm.js";
 import { ImageList } from "./components/ImageList.js";
 import { KittyPlaceholderImage } from "./components/KittyPlaceholderImage.js";
 import { NaturalCaptionEditor } from "./components/NaturalCaptionEditor.js";
@@ -15,6 +16,13 @@ import {
   saveCaption,
   saveTags,
 } from "./utils/dataset.js";
+import {
+  describeError,
+  filesToRemove,
+  moveToTrash,
+  permanentlyDelete,
+  removeEntryAt,
+} from "./utils/deleteEntry.js";
 import type { TerminalProbeResult } from "./utils/terminalProbe.js";
 
 // Rows reserved (outside the scrollable image list) for the list header and
@@ -50,6 +58,13 @@ export function App({ datasetPath, mode = "tags", graphics }: AppProps) {
   // Holding up/down in the editor therefore advanced a single image per chunk
   // (and saved to the wrong file). Route every read through a ref that the
   // setter updates immediately.
+  // Shift-D on the list opens a confirmation instead of deleting outright.
+  const [pendingDelete, setPendingDelete] = useState<number | null>(null);
+  const [trashError, setTrashError] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  // Guards against a burst of confirm keys firing the same delete twice.
+  const deletingRef = useRef(false);
+
   const editingIndexRef = useRef<number | null>(null);
   const setEditing = useCallback((index: number | null) => {
     editingIndexRef.current = index;
@@ -137,6 +152,8 @@ export function App({ datasetPath, mode = "tags", graphics }: AppProps) {
   // `editingIndex` this render captured, decides whether the editor has since
   // opened inside the same batch.
   useInput((input) => {
+    // `q` is the confirmation bar's own cancel while it is open.
+    if (pendingDelete !== null) return;
     if (editingIndexRef.current === null && input.includes("q")) {
       exit();
     }
@@ -225,6 +242,50 @@ export function App({ datasetPath, mode = "tags", graphics }: AppProps) {
     setEditing(null);
   }, [setEditing]);
 
+  const handleRequestDelete = useCallback((index: number) => {
+    setPendingDelete(index);
+    setTrashError(null);
+  }, []);
+
+  const handleCancelDelete = useCallback(() => {
+    setPendingDelete(null);
+    setTrashError(null);
+  }, []);
+
+  const handleConfirmDelete = useCallback(
+    async (mode: "trash" | "permanent") => {
+      if (deletingRef.current || pendingDelete === null) return;
+      const target = entries[pendingDelete];
+      if (!target) return;
+
+      deletingRef.current = true;
+      setDeleting(true);
+      const files = filesToRemove(entries, target);
+      try {
+        if (mode === "trash") {
+          await moveToTrash(files);
+        } else {
+          await permanentlyDelete(files);
+        }
+      } catch (error) {
+        // Offer the permanent delete rather than doing it: the user agreed to
+        // trash this file, which is a different promise.
+        setTrashError(describeError(error));
+        return;
+      } finally {
+        deletingRef.current = false;
+        setDeleting(false);
+      }
+
+      const next = removeEntryAt(entries, pendingDelete);
+      setEntries(next.entries);
+      setSelectedIndex(next.selectedIndex);
+      setPendingDelete(null);
+      setTrashError(null);
+    },
+    [entries, pendingDelete],
+  );
+
   if (loading) {
     return (
       <Box>
@@ -290,12 +351,27 @@ export function App({ datasetPath, mode = "tags", graphics }: AppProps) {
             selectedIndex={selectedIndex}
             onSelect={setSelectedIndex}
             onEdit={handleEdit}
+            onRequestDelete={handleRequestDelete}
             maxVisible={isEditing ? COMPACT_LIST_ROWS : listMaxVisible}
-            disabled={isEditing}
+            disabled={isEditing || pendingDelete !== null}
             compact={isEditing}
             mode={mode}
           />
         </Box>
+
+        {/* Delete confirmation (list mode only; owns input while open) */}
+        {pendingDelete !== null && entries[pendingDelete] && (
+          <Box flexShrink={0}>
+            <DeleteConfirm
+              entry={entries[pendingDelete]}
+              files={filesToRemove(entries, entries[pendingDelete])}
+              trashError={trashError}
+              busy={deleting}
+              onConfirm={handleConfirmDelete}
+              onCancel={handleCancelDelete}
+            />
+          </Box>
+        )}
 
         {/* Image preview - rendered at top level */}
         {editingEntry && (

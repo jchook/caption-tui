@@ -51,6 +51,7 @@
     "ink-picture": "2.1.0",
     "ink-text-input": "^6.0.0",
     "jimp": "^1.6.1",
-    "react": "^19.2.4"
+    "react": "^19.2.4",
+    "trash": "^10.1.1"
   }
 }

@@ -30,6 +30,8 @@ Controls (list mode):
   Ctrl-D / Ctrl-U  Half a page down/up
   g / G            Jump to the first / last image (also Home / End)
   Enter            Edit selected image's caption
+  Shift-D          Delete the selected image + its caption (asks first, and
+                   moves them to the system trash rather than unlinking)
   q                Quit
 
 Controls (tag mode edit):

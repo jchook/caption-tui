@@ -24,6 +24,8 @@ interface ImageListProps {
   // where a blocking frame write buffers the repeats into one chunk.
   onSelect: Dispatch<SetStateAction<number>>;
   onEdit: (index: number) => void;
+  /** Shift-D: ask to delete the image at this index. */
+  onRequestDelete?: (index: number) => void;
   maxVisible?: number;
   disabled?: boolean;
   compact?: boolean;
@@ -51,6 +53,7 @@ export function ImageList({
   selectedIndex,
   onSelect,
   onEdit,
+  onRequestDelete,
   maxVisible = 15,
   disabled = false,
   compact = false,
@@ -118,10 +121,12 @@ export function ImageList({
           : input;
 
       let openAfterMove = false;
+      let deleteAfterMove = false;
       let moves = 0;
       for (const ch of run) {
         if (navStep(0, ch, geometry) !== null) moves++;
         else if (ch === "\r" || ch === "\n") openAfterMove = true;
+        else if (ch === "D") deleteAfterMove = true;
       }
 
       if (moves > 0) {
@@ -134,10 +139,11 @@ export function ImageList({
           return index;
         });
       }
-      // Enter can ride along at the end of a burst ("jjj\r") and must open
-      // whatever the moves before it selected -- applyMove already advanced the
-      // ref synchronously.
+      // Enter and Shift-D can ride along at the end of a burst ("jjj\r") and
+      // must act on whatever the moves before them selected -- applyMove
+      // already advanced the ref synchronously.
       if (openAfterMove) onEdit(selectedRef.current);
+      else if (deleteAfterMove) onRequestDelete?.(selectedRef.current);
     },
     { isActive: !disabled },
   );
@@ -159,7 +165,8 @@ export function ImageList({
           </Text>
           <Text dimColor>
             {" "}
-            - ↑↓/jk move, PgUp/PgDn or Ctrl-D/U page, g/G ends, Enter to edit
+            - ↑↓/jk move, PgUp/PgDn or Ctrl-D/U page, g/G ends, Enter edit, D
+            delete
           </Text>
         </Box>
       )}

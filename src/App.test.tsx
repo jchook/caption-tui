@@ -9,6 +9,7 @@ import { App } from "./App.js";
 const CTRL_A = "\u0001";
 const ESC = "\u001B";
 const ENTER = "\r";
+const SHIFT_D = "D";
 
 const flush = () => new Promise((r) => setTimeout(r, 120));
 
@@ -101,4 +102,86 @@ test("saving one image never rewrites another image's caption", async () => {
       assert.equal(await readFile(join(dir, "b.txt"), "utf8"), "caption b");
     },
   );
+});
+
+test("Shift-D asks before deleting, and Esc leaves the files alone", async () => {
+  // Nothing in this suite confirms a delete: that would put files in the
+  // developer's real trash. The confirmation keys are covered against the
+  // DeleteConfirm component directly.
+  await withDataset(
+    { "a.png": "", "a.txt": "caption a", "b.png": "", "b.txt": "caption b" },
+    async (dir) => {
+      const { stdin, lastFrame } = render(<App datasetPath={dir} />);
+      await flush();
+
+      stdin.write(SHIFT_D);
+      await flush();
+      assert.match(lastFrame() ?? "", /Delete a\.png \+ a\.txt\?/);
+
+      stdin.write(ESC);
+      await flush();
+      assert.doesNotMatch(lastFrame() ?? "", /Delete a\.png/);
+      assert.equal(await readFile(join(dir, "a.png"), "utf8"), "");
+      assert.equal(await readFile(join(dir, "a.txt"), "utf8"), "caption a");
+    },
+  );
+});
+
+test("Shift-D at the end of a burst targets the row the burst landed on", async () => {
+  await withDataset(
+    {
+      "a.png": "",
+      "a.txt": "a",
+      "b.png": "",
+      "b.txt": "b",
+      "c.png": "",
+      "c.txt": "c",
+    },
+    async (dir) => {
+      const { stdin, lastFrame } = render(<App datasetPath={dir} />);
+      await flush();
+
+      // "jjD" arrives as one event; the prompt must name c.png, not a.png.
+      stdin.write("jjD");
+      await flush();
+      assert.match(lastFrame() ?? "", /Delete c\.png \+ c\.txt\?/);
+    },
+  );
+});
+
+test("a caption shared by two images is not offered up for deletion", async () => {
+  await withDataset(
+    {
+      "shared.jpg": "",
+      "shared.png": "",
+      "shared.txt": "shared caption",
+    },
+    async (dir) => {
+      const { stdin, lastFrame } = render(<App datasetPath={dir} />);
+      await flush();
+
+      stdin.write(SHIFT_D);
+      await flush();
+      const frame = lastFrame() ?? "";
+      assert.match(frame, /Delete shared\.jpg\?/);
+      assert.doesNotMatch(frame, /Delete shared\.jpg \+ shared\.txt/);
+      assert.match(frame, /shared\.txt kept/);
+    },
+  );
+});
+
+test("q does not quit while the delete confirmation is open", async () => {
+  await withDataset({ "a.png": "", "a.txt": "a" }, async (dir) => {
+    const { stdin, lastFrame } = render(<App datasetPath={dir} />);
+    await flush();
+
+    stdin.write(SHIFT_D);
+    await flush();
+    stdin.write("q"); // cancels the prompt rather than exiting the app
+    await flush();
+
+    const frame = lastFrame() ?? "";
+    assert.doesNotMatch(frame, /Delete a\.png/);
+    assert.match(frame, /Images \(1\)/);
+  });
 });

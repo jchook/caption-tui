@@ -27,6 +27,8 @@ CLI tool for managing image caption files (used for training image models). Give
 - `src/utils/dataset.ts` - Dataset loading, tag/prose parsing, tag autocomplete
 - `src/utils/textNav.ts` - Word-wise cursor movement / deletion for the prose editor
 - `src/utils/listViewport.ts` - List scroll window + per-character navigation steps
+- `src/utils/deleteEntry.ts` - Which files a delete removes, trash vs. unlink
+- `src/components/DeleteConfirm.tsx` - Shift-D confirmation bar
 - `src/utils/kittyPlaceholder.ts` - Kitty graphics encoder (diacritics, transmit, tmux passthrough)
 - `src/utils/terminalProbe.ts` - Startup probe for kitty/sixel support + cell pixel size
 - `src/utils/inkControl.ts` - Bridge to the Ink instance's clear() for full repaints
@@ -67,7 +69,7 @@ caption-tui --natural /path/to/dataset  # natural-language mode
 
 ## Controls
 
-**List mode**: ↑↓/jk to navigate, PgDn/PgUp (or Ctrl-F/Ctrl-B) to page, Ctrl-D/Ctrl-U for half a page, g/G (or Home/End) for the ends of the list, Enter to edit, q to quit
+**List mode**: ↑↓/jk to navigate, PgDn/PgUp (or Ctrl-F/Ctrl-B) to page, Ctrl-D/Ctrl-U for half a page, g/G (or Home/End) for the ends of the list, Enter to edit, Shift-D to delete, q to quit
 
 **Tag edit mode**: Enter/Tab to accept suggestion, comma to add tag, ↑↓ to navigate images, Esc to close
 
@@ -113,6 +115,28 @@ In natural mode, Ctrl-G opens the caption in the user's `$VISUAL`/`$EDITOR` (rea
 - **Otherwise**: full-screen — drops raw mode, leaves the alt screen, runs the editor with inherited stdio, then re-enters the alt screen and calls `inkControl.clear()` (wired in `index.ts`) to force a full Ink repaint.
 
 Editor content is normalized back to a single line (captions are single-line prose).
+
+## Deleting images (Shift-D)
+
+Shift-D on the list opens a confirmation bar (`src/components/DeleteConfirm.tsx`)
+rather than deleting anything; the list's input is disabled while it is open.
+
+- Trashing goes through the [`trash`](https://github.com/sindresorhus/trash)
+  package: a bundled binary on macOS/Windows (Finder trash / Recycle Bin) and
+  the XDG spec on Linux. **It must be called with `{glob: false}`** -- globbing
+  is its default, and a dataset file named `img[1].png` would otherwise be read
+  as a pattern instead of a path. Files on another mount land in that mount's
+  `.Trash-$UID`, not `~/.local/share/Trash`; that is the spec, not a bug.
+- **Trashing never silently falls back to `unlink`.** If `trash()` throws, the
+  bar shows the error and asks a second time for a deliberate `D` -- the user
+  agreed to trash the file, which is a different promise from deleting it.
+- The caption is only removed when nothing else points at it, so deleting one of
+  `image1.jpg` / `image1.png` leaves the shared `image1.txt` for the survivor.
+
+Tests deliberately never confirm a trash: that would put files in the
+developer's real trash. `DeleteConfirm.test.tsx` covers the keys against the
+component, `deleteEntry.test.ts` covers file selection and the unlink path, and
+`App.test.tsx` only opens and cancels the prompt.
 
 ## Duplicate basenames share a caption file
 

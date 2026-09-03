@@ -51,6 +51,7 @@ my-dataset/
 | `Ctrl-D` `Ctrl-U` | Half page down/up |
 | `g` `G` or `Home` `End` | Jump to first/last image |
 | `Enter` | Edit caption |
+| `Shift-D` | Delete image (asks first; moves to trash) |
 | `q` | Quit |
 
 ### Edit Mode
