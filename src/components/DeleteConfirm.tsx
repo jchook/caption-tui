@@ -2,6 +2,25 @@ import { basename } from "node:path";
 import { Box, Text, useInput } from "ink";
 import type { ImageEntry } from "../utils/dataset.js";
 
+/**
+ * Rows the bar occupies, border included.
+ *
+ * App reserves exactly this much room from the list before rendering the bar:
+ * the list otherwise grows to fill the whole app box, pushing the bar past its
+ * `overflow: hidden` so it is invisible even though it is mounted and taking
+ * input. Both sides call this, so the reservation cannot drift from what the
+ * component actually draws.
+ */
+export function deleteConfirmRows(options: {
+  trashError: boolean;
+  /** True when a shared caption is being kept, which costs an extra line. */
+  keepsCaption: boolean;
+}): number {
+  const border = 2;
+  const lines = options.trashError ? 3 : 2 + (options.keepsCaption ? 1 : 0);
+  return border + lines;
+}
+
 interface DeleteConfirmProps {
   entry: ImageEntry;
   /** Files this delete will remove, from `filesToRemove`. */
@@ -42,12 +61,18 @@ export function DeleteConfirm({
   const keptCaption = files.includes(entry.captionPath)
     ? null
     : basename(entry.captionPath);
+  const height = deleteConfirmRows({
+    trashError: trashError !== null,
+    keepsCaption: keptCaption !== null,
+  });
   const label = entry.name;
   const names = files.map((file) => basename(file)).join(" + ");
 
   return (
     <Box
       flexDirection="column"
+      flexShrink={0}
+      height={height}
       borderStyle="single"
       borderColor={trashError ? "red" : "yellow"}
       paddingX={1}

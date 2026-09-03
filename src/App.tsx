@@ -3,7 +3,10 @@ import { Box, Text, useApp, useInput } from "ink";
 import Image, { InkPictureProvider, type TerminalInfo } from "ink-picture";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CaptionEditor } from "./components/CaptionEditor.js";
-import { DeleteConfirm } from "./components/DeleteConfirm.js";
+import {
+  DeleteConfirm,
+  deleteConfirmRows,
+} from "./components/DeleteConfirm.js";
 import { ImageList } from "./components/ImageList.js";
 import { KittyPlaceholderImage } from "./components/KittyPlaceholderImage.js";
 import { NaturalCaptionEditor } from "./components/NaturalCaptionEditor.js";
@@ -325,7 +328,22 @@ export function App({ datasetPath, mode = "tags", graphics }: AppProps) {
   const appRows = Math.max(1, rows - 1);
   // Keep the whole app within the terminal so Ink's frame math stays aligned
   // (an overflowing frame is what garbles the list while scrolling).
-  const listMaxVisible = Math.max(1, appRows - LIST_CHROME_ROWS);
+  // The delete bar sits below the list, and the list otherwise grows to fill
+  // the whole app box -- which pushes the bar past `overflow: hidden` and makes
+  // it invisible even though it is mounted and taking input. Give up its rows.
+  const deleteTarget =
+    pendingDelete === null ? undefined : entries[pendingDelete];
+  const deleteFiles = deleteTarget
+    ? filesToRemove(entries, deleteTarget)
+    : undefined;
+  const confirmRows =
+    deleteTarget && deleteFiles
+      ? deleteConfirmRows({
+          trashError: trashError !== null,
+          keepsCaption: !deleteFiles.includes(deleteTarget.captionPath),
+        })
+      : 0;
+  const listMaxVisible = Math.max(1, appRows - LIST_CHROME_ROWS - confirmRows);
   // Preview height depends only on the terminal size, so the image never
   // resizes (and never has to be re-transmitted) while you type.
   const previewHeight = Math.max(
@@ -360,11 +378,11 @@ export function App({ datasetPath, mode = "tags", graphics }: AppProps) {
         </Box>
 
         {/* Delete confirmation (list mode only; owns input while open) */}
-        {pendingDelete !== null && entries[pendingDelete] && (
+        {deleteTarget && deleteFiles && (
           <Box flexShrink={0}>
             <DeleteConfirm
-              entry={entries[pendingDelete]}
-              files={filesToRemove(entries, entries[pendingDelete])}
+              entry={deleteTarget}
+              files={deleteFiles}
               trashError={trashError}
               busy={deleting}
               onConfirm={handleConfirmDelete}

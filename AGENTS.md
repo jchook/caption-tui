@@ -121,6 +121,14 @@ Editor content is normalized back to a single line (captions are single-line pro
 Shift-D on the list opens a confirmation bar (`src/components/DeleteConfirm.tsx`)
 rather than deleting anything; the list's input is disabled while it is open.
 
+**Anything rendered below the list has to be paid for out of the list's rows.**
+The image list grows to fill the app box, so a sibling underneath it lands past
+the app's `overflow: hidden`: invisible, but still mounted and taking input --
+the delete worked with no dialog on screen. `deleteConfirmRows()` is exported
+from the bar and called by both sides, so what App subtracts from `maxVisible`
+cannot drift from what the bar draws. A dataset small enough to leave slack
+hides this entirely, so the regression tests fill the terminal.
+
 - Trashing goes through the [`trash`](https://github.com/sindresorhus/trash)
   package: a bundled binary on macOS/Windows (Finder trash / Recycle Bin) and
   the XDG spec on Linux. **It must be called with `{glob: false}`** -- globbing

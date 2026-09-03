@@ -185,3 +185,64 @@ test("q does not quit while the delete confirmation is open", async () => {
     assert.match(frame, /Images \(1\)/);
   });
 });
+
+test("the delete confirmation is visible when the list fills the terminal", async () => {
+  // The list grows to fill the app box, so the bar rendered below it landed
+  // past `overflow: hidden`: invisible, but still mounted and taking keys --
+  // the delete worked with no dialog on screen. The list has to give up rows.
+  const files: Record<string, string> = {};
+  for (let i = 0; i < 60; i++) {
+    const name = `img_${String(i).padStart(3, "0")}`;
+    files[`${name}.png`] = "";
+    files[`${name}.txt`] = "a caption";
+  }
+
+  await withDataset(files, async (dir) => {
+    const { stdin, lastFrame } = render(<App datasetPath={dir} />);
+    await flush();
+    const heightBefore = (lastFrame() ?? "").split("\n").length;
+
+    stdin.write(SHIFT_D);
+    await flush();
+
+    const frame = lastFrame() ?? "";
+    assert.match(frame, /Delete img_000\.png \+ img_000\.txt\?/);
+    assert.match(frame, /move to trash/);
+    // Room was taken from the list, not added to the app: no overflow.
+    assert.equal(frame.split("\n").length, heightBefore);
+  });
+});
+
+test("the taller shared-caption confirmation also fits", async () => {
+  // This variant carries an extra line, so it needs one more row than the plain
+  // one -- reserving a fixed count would clip its last line.
+  const files: Record<string, string> = {
+    "shared.jpg": "",
+    "shared.png": "",
+    "shared.txt": "c",
+  };
+  for (let i = 0; i < 60; i++) {
+    const name = `img_${String(i).padStart(3, "0")}`;
+    files[`${name}.png`] = "";
+    files[`${name}.txt`] = "a caption";
+  }
+
+  await withDataset(files, async (dir) => {
+    const { stdin, lastFrame } = render(<App datasetPath={dir} />);
+    await flush();
+    const heightBefore = (lastFrame() ?? "").split("\n").length;
+
+    stdin.write("G"); // jump to the shared pair at the end of the list
+    await flush();
+    stdin.write("k"); // shared.jpg
+    await flush();
+    stdin.write(SHIFT_D);
+    await flush();
+
+    const frame = lastFrame() ?? "";
+    assert.match(frame, /Delete shared\.jpg\?/);
+    assert.match(frame, /shared\.txt kept/);
+    assert.match(frame, /move to trash/);
+    assert.equal(frame.split("\n").length, heightBefore);
+  });
+});

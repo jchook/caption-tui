@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { render } from "ink-testing-library";
 import type { ImageEntry } from "../utils/dataset.js";
-import { DeleteConfirm } from "./DeleteConfirm.js";
+import { DeleteConfirm, deleteConfirmRows } from "./DeleteConfirm.js";
 
 const ESC = "\u001B";
 const flush = () => new Promise((r) => setTimeout(r, 20));
@@ -117,4 +117,36 @@ test("a caption kept for a sibling image is called out", async () => {
   await flush();
   assert.match(ui.frame(), /Delete img_007\.png\?/);
   assert.match(ui.frame(), /img_007\.txt kept/);
+});
+
+test("deleteConfirmRows matches the rows the bar actually draws", async () => {
+  // App reserves rows from the list using this number. If it drifts below what
+  // the component draws, the bar is clipped by the app's `overflow: hidden` and
+  // goes invisible while still taking input -- which is exactly what happened.
+  const cases = [
+    { name: "image + caption", props: {}, keepsCaption: false, error: false },
+    {
+      name: "caption kept for a sibling",
+      props: { files: [entry.imagePath] },
+      keepsCaption: true,
+      error: false,
+    },
+    {
+      name: "trash failed",
+      props: { trashError: "EACCES" },
+      keepsCaption: false,
+      error: true,
+    },
+  ];
+
+  for (const testCase of cases) {
+    const ui = mount(testCase.props);
+    await flush();
+    const drawn = ui.frame().split("\n").length;
+    const reserved = deleteConfirmRows({
+      trashError: testCase.error,
+      keepsCaption: testCase.keepsCaption,
+    });
+    assert.equal(drawn, reserved, testCase.name);
+  }
 });
