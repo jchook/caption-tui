@@ -26,6 +26,7 @@ CLI tool for managing image caption files (used for training image models). Give
 - `src/hooks/useExternalEditor.ts` - Ctrl-G handoff to $EDITOR (tmux split or full-screen)
 - `src/utils/dataset.ts` - Dataset loading, tag/prose parsing, tag autocomplete
 - `src/utils/textNav.ts` - Word-wise cursor movement / deletion for the prose editor
+- `src/utils/listViewport.ts` - List scroll window + per-character navigation steps
 - `src/utils/kittyPlaceholder.ts` - Kitty graphics encoder (diacritics, transmit, tmux passthrough)
 - `src/utils/terminalProbe.ts` - Startup probe for kitty/sixel support + cell pixel size
 - `src/utils/inkControl.ts` - Bridge to the Ink instance's clear() for full repaints
@@ -66,11 +67,43 @@ caption-tui --natural /path/to/dataset  # natural-language mode
 
 ## Controls
 
-**List mode**: ↑↓/jk to navigate, Enter to edit, q to quit
+**List mode**: ↑↓/jk to navigate, PgDn/PgUp (or Ctrl-F/Ctrl-B) to page, Ctrl-D/Ctrl-U for half a page, g/G (or Home/End) for the ends of the list, Enter to edit, q to quit
 
 **Tag edit mode**: Enter/Tab to accept suggestion, comma to add tag, ↑↓ to navigate images, Esc to close
 
 **Natural edit mode**: Enter to save & go to next image, ↑↓ to navigate images, ←/→ to move the cursor (Ctrl-←/→, Alt-←/→, Alt-b/f for word jumps), Ctrl-A/Ctrl-E or Home/End for start/end of line, Ctrl-W to delete the previous word, Ctrl-G to edit in `$EDITOR`, Esc to close. The cursor is an inverse block over the current character. Cursor/word helpers live in `src/utils/textNav.ts`.
+
+### Input arrives in bursts, not keypresses
+
+Every input handler in this app has to cope with more than one keypress per
+event, and this has bitten the codebase three times now (fast typing dropping
+characters, list scrolling crawling over SSH). The mechanism:
+
+- Ink's parser (`ink/build/input-parser.js`) splits a stdin chunk on escape
+  sequences only. **A run of ordinary characters is emitted as ONE event** --
+  the same path a paste takes. Holding `j` delivers `useInput("jjjjjjj", {})`,
+  so `input === "j"` never matches and the whole burst is silently dropped.
+  A run of raw control bytes behaves the same way, and arrives with no `ctrl`
+  flag set (a *lone* Ctrl-D is instead reported as `{ctrl: true, input: "d"}`).
+- Escape-sequence keys (arrows, Page keys) do get one event each, but Ink
+  dispatches every event in a chunk synchronously inside a single
+  `reconciler.batchedUpdates`. **No re-render happens between them**, so any
+  handler deriving its next value from a prop or from `useState` state reads the
+  value from before the burst began, and N presses collapse into one.
+
+Over SSH this is self-amplifying: `process.stdout` writes to a TTY are
+synchronous, so a frame write that blocks on the ssh channel stalls the event
+loop, key repeats pile into one chunk, and the whole chunk then moves the
+cursor a single row (or nowhere at all).
+
+So: read the freshest value from a ref that is advanced synchronously (not from
+props/state, and not from inside a `setState` updater -- React only evaluates
+those eagerly when its queue is empty, which is false for the second update in a
+batch), and treat `input` as a *string of keys* to walk, not a single key.
+`navStep()` in `src/utils/listViewport.ts` is the per-character step for the
+list; the editors split their run on `,` / `\r` / `\n`. Regression tests live in
+`src/components/ImageList.test.tsx` and both editor test files -- they write a
+whole burst as one `stdin.write()`.
 
 ### `$EDITOR` handoff (Ctrl-G)
 

@@ -101,3 +101,57 @@ test("comma commits a tag mid-stream", async () => {
 
   assert.deepEqual(captured.saved, ["sky", "sea"]);
 });
+
+test("a run carrying its own separators commits each tag", async () => {
+  // "red,blue\r" used to arrive as one event and become the single bogus tag
+  // "red,blue" -- the comma and the Enter were never given their meaning.
+  const captured: { saved: string[] | null } = { saved: null };
+
+  const { stdin } = render(
+    <CaptionEditor
+      entry={{ ...entry, tags: [] }}
+      allTags={new Set<string>()}
+      onSave={(tags) => {
+        captured.saved = tags;
+      }}
+      onNext={() => {}}
+      onPrev={() => {}}
+      onClose={() => {}}
+    />,
+  );
+
+  await flush();
+  stdin.write("red,blue\r");
+  await flush();
+  stdin.write("\u001B"); // Esc -> save and close
+  await flush();
+
+  assert.deepEqual(captured.saved, ["red", "blue"]);
+});
+
+test("a run accepts suggestions against the text typed inside that same run", async () => {
+  // The suggestion list this render computed predates the run's own text, so
+  // the Enter has to be resolved against the live draft.
+  const captured: { saved: string[] | null } = { saved: null };
+
+  const { stdin } = render(
+    <CaptionEditor
+      entry={{ ...entry, tags: [] }}
+      allTags={new Set(["sunset", "sunlight"])}
+      onSave={(tags) => {
+        captured.saved = tags;
+      }}
+      onNext={() => {}}
+      onPrev={() => {}}
+      onClose={() => {}}
+    />,
+  );
+
+  await flush();
+  stdin.write("suns\r");
+  await flush();
+  stdin.write("\u001B");
+  await flush();
+
+  assert.deepEqual(captured.saved, ["sunset"]);
+});

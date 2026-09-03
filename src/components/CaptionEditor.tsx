@@ -40,14 +40,14 @@ export function CaptionEditor({
   tagsRef.current = tags;
   draftRef.current = draft;
 
-  // Functional updates that keep the ref in lockstep, so rapid input builds on
-  // the freshest value rather than the one captured when this render ran.
+  // Updates build on the ref, which advances synchronously, rather than on the
+  // value captured when this render ran. A single input event can drive several
+  // updates in a row (see the run handling below), and only the first of those
+  // would see React's newest state.
   const updateDraft = useCallback((fn: (prev: Draft) => Draft) => {
-    setDraft((prev) => {
-      const next = fn(prev);
-      draftRef.current = next;
-      return next;
-    });
+    const next = fn(draftRef.current);
+    draftRef.current = next;
+    setDraft(next);
   }, []);
   const setTagsSynced = useCallback((next: string[]) => {
     tagsRef.current = next;
@@ -109,6 +109,21 @@ export function CaptionEditor({
       setSelectedSuggestion(0);
     }
   }, [setTagsSynced, updateDraft]);
+
+  // Enter arriving inside a run of characters. It can't reuse acceptSuggestion:
+  // that reads the suggestion list this render computed, which predates the
+  // text typed earlier in the very same run. Recompute against the live draft.
+  const commitDraftFromRun = useCallback(() => {
+    const value = draftRef.current.value.trim();
+    if (!value) return;
+    const suggestion = getTagSuggestions(allTags, value, tagsRef.current)[0];
+    if (suggestion) {
+      setTagsSynced([...tagsRef.current, suggestion]);
+      updateDraft(() => EMPTY_DRAFT);
+      return;
+    }
+    addCurrentTag();
+  }, [allTags, setTagsSynced, updateDraft, addCurrentTag]);
 
   const removeLastTag = useCallback(() => {
     if (draftRef.current.value === "" && tagsRef.current.length > 0) {
@@ -185,18 +200,24 @@ export function CaptionEditor({
       return;
     }
 
-    // Handle comma as tag separator
-    if (input === ",") {
-      addCurrentTag();
-      return;
-    }
-
-    // Regular character input
+    // Regular character input. Ink hands over a whole run of characters as ONE
+    // event -- its paste path, which fast typing also lands on once a laggy
+    // link stalls the event loop -- so the run carries its own separators:
+    // "red,blue\r" used to become the single tag "red,blue". Walk the run and
+    // give each separator the meaning it would have had on its own.
     if (input && !key.ctrl && !key.meta) {
-      updateDraft((d) => ({
-        value: d.value.slice(0, d.cursor) + input + d.value.slice(d.cursor),
-        cursor: d.cursor + input.length,
-      }));
+      for (const part of input.split(/([,\r\n])/)) {
+        if (part === ",") {
+          addCurrentTag();
+        } else if (part === "\r" || part === "\n") {
+          commitDraftFromRun();
+        } else if (part) {
+          updateDraft((d) => ({
+            value: d.value.slice(0, d.cursor) + part + d.value.slice(d.cursor),
+            cursor: d.cursor + part.length,
+          }));
+        }
+      }
       setSelectedSuggestion(0);
     }
   });

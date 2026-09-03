@@ -40,16 +40,15 @@ export function NaturalCaptionEditor({
   const stateRef = useRef(state);
   stateRef.current = state;
 
-  // Functional updates are essential: Ink can fire the input handler several
-  // times before React commits a re-render, so each keystroke must build on the
-  // freshest text, not the `text` captured when this render's handler was made.
-  // (Updating stateRef here too keeps read-only handlers correct within a batch.)
+  // Every edit builds on the ref, not on the `text` captured when this render's
+  // handler was made: Ink can fire the input handler several times before React
+  // commits a re-render, and several updates can run within one handler. Only
+  // the first of those would see React's newest state, so the ref -- advanced
+  // synchronously here -- is the source of truth between renders.
   const update = useCallback((fn: (prev: EditorState) => EditorState) => {
-    setState((prev) => {
-      const next = fn(prev);
-      stateRef.current = next;
-      return next;
-    });
+    const next = fn(stateRef.current);
+    stateRef.current = next;
+    setState(next);
   }, []);
 
   // Reset when the image changes.
@@ -164,10 +163,26 @@ export function NaturalCaptionEditor({
 
     // Regular character input (ignore other control/meta chords).
     if (input && !key.ctrl && !key.meta) {
-      update((s) => ({
-        text: s.text.slice(0, s.cursor) + input + s.text.slice(s.cursor),
-        cursor: s.cursor + input.length,
-      }));
+      // Ink hands over a whole run of characters as ONE event -- its paste
+      // path, which a held or fast-typed key also lands on once a laggy link
+      // stalls the event loop. So the run can carry the Enter that ends it
+      // ("hello world\r"), and inserting it verbatim buried a carriage return
+      // in the caption instead of saving. Split the run on its newlines.
+      const segments = input.split(/[\r\n]/);
+      const typed = segments[0] ?? "";
+      if (typed) {
+        update((s) => ({
+          text: s.text.slice(0, s.cursor) + typed + s.text.slice(s.cursor),
+          cursor: s.cursor + typed.length,
+        }));
+      }
+      // One save-and-advance per Enter, so holding Enter still moves. Anything
+      // typed after an Enter in the same chunk belongs to an image this editor
+      // hasn't loaded yet, so there is nowhere to put it.
+      for (let i = 1; i < segments.length; i++) {
+        onSave(stateRef.current.text);
+        onNext();
+      }
     }
   });
 

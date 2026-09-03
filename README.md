@@ -47,6 +47,9 @@ my-dataset/
 | Key | Action |
 |-----|--------|
 | `↑` `↓` or `j` `k` | Navigate |
+| `PgDn` `PgUp` or `Ctrl-F` `Ctrl-B` | Page down/up |
+| `Ctrl-D` `Ctrl-U` | Half page down/up |
+| `g` `G` or `Home` `End` | Jump to first/last image |
 | `Enter` | Edit caption |
 | `q` | Quit |
 

@@ -113,3 +113,55 @@ test("Ctrl-W deletes the word before the cursor", async () => {
   // Editor keeps the trailing space; the app trims it on persist (saveCaption).
   assert.equal(captured.saved, "big red ");
 });
+
+test("a run carrying its own Enter saves and advances (no stray newline)", async () => {
+  // Ink delivers a run of characters as one event. Over a laggy link the Enter
+  // that ends a caption arrives inside that run, and inserting it verbatim used
+  // to bury a carriage return in the caption instead of saving.
+  const captured: { saved: string | null; nexts: number } = {
+    saved: null,
+    nexts: 0,
+  };
+
+  const { stdin } = render(
+    <NaturalCaptionEditor
+      entry={{ ...entry, caption: "" }}
+      onSave={(caption) => {
+        captured.saved = caption;
+      }}
+      onNext={() => {
+        captured.nexts++;
+      }}
+      onPrev={() => {}}
+      onClose={() => {}}
+    />,
+  );
+
+  await flush();
+  stdin.write("a quiet street at dusk\r");
+  await flush();
+
+  assert.equal(captured.saved, "a quiet street at dusk");
+  assert.equal(captured.nexts, 1);
+});
+
+test("a run of Enters advances once per press", async () => {
+  let nexts = 0;
+  const { stdin } = render(
+    <NaturalCaptionEditor
+      entry={entry}
+      onSave={() => {}}
+      onNext={() => {
+        nexts++;
+      }}
+      onPrev={() => {}}
+      onClose={() => {}}
+    />,
+  );
+
+  await flush();
+  stdin.write("\r\r\r");
+  await flush();
+
+  assert.equal(nexts, 3);
+});

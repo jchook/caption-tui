@@ -1,7 +1,7 @@
 import { appendFileSync } from "node:fs";
 import { Box, Text, useApp, useInput } from "ink";
 import Image, { InkPictureProvider, type TerminalInfo } from "ink-picture";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { CaptionEditor } from "./components/CaptionEditor.js";
 import { ImageList } from "./components/ImageList.js";
 import { KittyPlaceholderImage } from "./components/KittyPlaceholderImage.js";
@@ -44,6 +44,17 @@ export function App({ datasetPath, mode = "tags", graphics }: AppProps) {
   const [error, setError] = useState<string | null>(null);
   // Tag mode autocompletes against known tags. Natural mode has no autocomplete.
   const [allTags, setAllTags] = useState<Set<string>>(new Set());
+
+  // Ink fires the input handler once per key in a stdin chunk, all inside one
+  // React batch, so `editingIndex` is stale for every key after the first.
+  // Holding up/down in the editor therefore advanced a single image per chunk
+  // (and saved to the wrong file). Route every read through a ref that the
+  // setter updates immediately.
+  const editingIndexRef = useRef<number | null>(null);
+  const setEditing = useCallback((index: number | null) => {
+    editingIndexRef.current = index;
+    setEditingIndex(index);
+  }, []);
 
   // With kitty available we render the preview ourselves via Unicode
   // placeholders, which are plain text and therefore need none of the repaint
@@ -120,9 +131,13 @@ export function App({ datasetPath, mode = "tags", graphics }: AppProps) {
       });
   }, [datasetPath, isNatural]);
 
-  // Handle quit
+  // Handle quit. `input` can be a whole run of characters (Ink's paste path,
+  // which held or fast-typed keys also take once a laggy link stalls the event
+  // loop), so a burst ending in `q` still means quit -- and the ref, not the
+  // `editingIndex` this render captured, decides whether the editor has since
+  // opened inside the same batch.
   useInput((input) => {
-    if (input === "q" && editingIndex === null) {
+    if (editingIndexRef.current === null && input.includes("q")) {
       exit();
     }
   });
@@ -131,85 +146,82 @@ export function App({ datasetPath, mode = "tags", graphics }: AppProps) {
     (index: number) => {
       const entry = entries[index];
       if (!entry) return;
-      setEditingIndex(index);
+      setEditing(index);
     },
-    [entries],
+    [entries, setEditing],
   );
 
-  const handleSave = useCallback(
-    async (tags: string[]) => {
-      if (editingIndex === null) return;
+  // Saves take their target entry explicitly, bound at the same render that
+  // handed that entry to the editor. A burst of up/down keys advances
+  // `editingIndex` several times before React re-renders, so a save keyed off
+  // the *current* index would write the text still sitting in the editor into
+  // the file of an image it has already moved past. Rows are located by
+  // captionPath inside the updater, so a stale `entries` array can't misplace
+  // the update either.
+  const handleSave = useCallback(async (target: ImageEntry, tags: string[]) => {
+    await saveTags(target.captionPath, tags);
 
-      const entry = entries[editingIndex];
-      if (!entry) return;
-      await saveTags(entry.captionPath, tags);
+    setEntries((prev) => {
+      const idx = prev.findIndex((e) => e.captionPath === target.captionPath);
+      if (idx === -1) return prev;
+      const updated = [...prev];
+      updated[idx] = { ...prev[idx], tags } as ImageEntry;
+      return updated;
+    });
 
-      // Update local state
-      const idx = editingIndex;
-      setEntries((prev) => {
-        const updated = [...prev];
-        updated[idx] = { ...entry, tags };
-        return updated;
-      });
-
-      // Update allTags
-      setAllTags((prev) => {
-        const newSet = new Set(prev);
-        for (const tag of tags) {
-          newSet.add(tag.toLowerCase());
-        }
-        return newSet;
-      });
-    },
-    [editingIndex, entries],
-  );
+    // Update allTags
+    setAllTags((prev) => {
+      const newSet = new Set(prev);
+      for (const tag of tags) {
+        newSet.add(tag.toLowerCase());
+      }
+      return newSet;
+    });
+  }, []);
 
   const handleSaveCaption = useCallback(
-    async (caption: string) => {
-      if (editingIndex === null) return;
-
-      const entry = entries[editingIndex];
-      if (!entry) return;
+    async (target: ImageEntry, caption: string) => {
       const trimmed = caption.trim();
-      await saveCaption(entry.captionPath, trimmed);
+      await saveCaption(target.captionPath, trimmed);
 
-      const idx = editingIndex;
       setEntries((prev) => {
+        const idx = prev.findIndex((e) => e.captionPath === target.captionPath);
+        if (idx === -1) return prev;
         const updated = [...prev];
-        updated[idx] = { ...entry, caption: trimmed };
+        updated[idx] = { ...prev[idx], caption: trimmed } as ImageEntry;
         return updated;
       });
     },
-    [editingIndex, entries],
+    [],
   );
 
   const handleNext = useCallback(() => {
-    if (editingIndex === null) return;
+    const current = editingIndexRef.current;
+    if (current === null) return;
 
-    const nextIndex = editingIndex + 1;
-    const nextEntry = entries[nextIndex];
-    if (nextEntry) {
+    const nextIndex = current + 1;
+    if (entries[nextIndex]) {
       setSelectedIndex(nextIndex);
-      setEditingIndex(nextIndex);
+      setEditing(nextIndex);
     } else {
-      setEditingIndex(null);
+      setEditing(null);
     }
-  }, [editingIndex, entries]);
+  }, [entries, setEditing]);
 
   const handlePrev = useCallback(() => {
-    if (editingIndex === null) return;
+    const current = editingIndexRef.current;
+    if (current === null) return;
 
-    const prevIndex = editingIndex - 1;
-    const prevEntry = entries[prevIndex];
-    if (prevEntry) {
+    const prevIndex = current - 1;
+    if (entries[prevIndex]) {
       setSelectedIndex(prevIndex);
-      setEditingIndex(prevIndex);
+      setEditing(prevIndex);
     }
-  }, [editingIndex, entries]);
+  }, [entries, setEditing]);
 
   const handleClose = useCallback(() => {
-    setEditingIndex(null);
-  }, []);
+    setEditing(null);
+  }, [setEditing]);
 
   if (loading) {
     return (
@@ -236,6 +248,10 @@ export function App({ datasetPath, mode = "tags", graphics }: AppProps) {
   }
 
   const isEditing = editingIndex !== null;
+  // Captured once per render so the preview and the editor -- and the save
+  // callback bound below -- all refer to the same image.
+  const editingEntry =
+    editingIndex === null ? undefined : entries[editingIndex];
 
   // Render one line short of the terminal height, which keeps Ink on its
   // standard render path instead of the fullscreen one that repaints via
@@ -280,11 +296,11 @@ export function App({ datasetPath, mode = "tags", graphics }: AppProps) {
         </Box>
 
         {/* Image preview - rendered at top level */}
-        {isEditing && entries[editingIndex] && (
+        {editingEntry && (
           <Box height={previewHeight} flexShrink={0} width={columns}>
             {useKittyPlaceholders ? (
               <KittyPlaceholderImage
-                src={entries[editingIndex]?.imagePath ?? ""}
+                src={editingEntry.imagePath}
                 maxColumns={columns}
                 maxRows={previewHeight}
                 cellWidth={graphics?.cellWidth}
@@ -296,7 +312,7 @@ export function App({ datasetPath, mode = "tags", graphics }: AppProps) {
                  depends on measureElement, which races on mount and can resolve to
                  0 -> the decode is skipped and the pane hangs on "Loading...". */
               <Image
-                src={entries[editingIndex]?.imagePath ?? ""}
+                src={editingEntry.imagePath}
                 width={columns}
                 height={previewHeight}
                 objectFit="contain"
@@ -316,21 +332,21 @@ export function App({ datasetPath, mode = "tags", graphics }: AppProps) {
         )}
 
         {/* Caption editor (shown when editing) */}
-        {isEditing && entries[editingIndex] && (
+        {editingEntry && (
           <Box flexGrow={1} flexShrink={1} minHeight={0} overflow="hidden">
             {isNatural ? (
               <NaturalCaptionEditor
-                entry={entries[editingIndex]}
-                onSave={handleSaveCaption}
+                entry={editingEntry}
+                onSave={(caption) => handleSaveCaption(editingEntry, caption)}
                 onNext={handleNext}
                 onPrev={handlePrev}
                 onClose={handleClose}
               />
             ) : (
               <CaptionEditor
-                entry={entries[editingIndex]}
+                entry={editingEntry}
                 allTags={allTags}
-                onSave={handleSave}
+                onSave={(tags) => handleSave(editingEntry, tags)}
                 onNext={handleNext}
                 onPrev={handlePrev}
                 onClose={handleClose}
