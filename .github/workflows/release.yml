@@ -1,0 +1,65 @@
+name: Release
+
+# Tag-driven: `npm version patch && git push --follow-tags` is the whole release
+# ritual. The tag is what triggers this; nothing publishes from a branch.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+  # Mints the OIDC token npm exchanges for publish rights (trusted publishing)
+  # and signs the provenance attestation. Without it, publishing fails.
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          # No dependency cache on a release build: what gets published should
+          # come from the lockfile, not from whatever a cache key happened to
+          # restore.
+          package-manager-cache: false
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+
+      - run: pnpm install --frozen-lockfile
+
+      # The tag says v1.2.3 but package.json is what npm actually publishes. A
+      # mismatch would ship the wrong version under the right-looking tag, so
+      # stop here instead.
+      - name: Tag matches package.json
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          pkg="$(node -p "require('./package.json').version")"
+          if [ "$tag" != "$pkg" ]; then
+            echo "tag ${GITHUB_REF_NAME} does not match package.json version ${pkg}" >&2
+            exit 1
+          fi
+
+      - run: pnpm check:ci
+      - run: pnpm test
+      - run: pnpm test:node
+      - run: pnpm build
+
+      # Trusted publishing needs npm >= 11.5.1. Node 24 ships npm 11.x, but the
+      # bundled patch version moves around; pin the floor explicitly.
+      - name: Ensure npm supports trusted publishing
+        run: npm install -g npm@^11.5.1
+
+      # No NPM_TOKEN. Auth comes from the OIDC token minted above, which npm
+      # trades for a short-lived credential -- configured once under the
+      # package's Settings -> Trusted publishers on npmjs.com.
+      # (Fallback if you ever want a token instead: drop `id-token: write`, add
+      # `env: NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}` here.)
+      - run: npm publish --provenance

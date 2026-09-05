@@ -1,8 +1,7 @@
 {
   "name": "caption-tui",
   "version": "1.0.0",
-  "description": "Fast image captioning TUI with autocomplete",
-  "module": "index.ts",
+  "description": "Fast keyboard-driven TUI for captioning image datasets",
   "type": "module",
   "bin": {
     "caption-tui": "./dist/index.js"
@@ -20,7 +19,7 @@
     "format": "biome format --write .",
     "lint": "biome lint --write .",
     "check": "biome check --write .",
-    "prepack": "biome check --write . && tsc -p tsconfig.build.json"
+    "check:ci": "biome check ."
   },
   "keywords": [
     "caption",
@@ -44,15 +43,23 @@
     "tsx": "^4",
     "typescript": "^7"
   },
-  "peerDependencies": {
-    "typescript": "^7"
-  },
   "dependencies": {
     "ink": "^7.1.1",
     "ink-picture": "2.1.0",
-    "ink-text-input": "^6.0.0",
     "jimp": "^1.6.1",
     "react": "^19.2.4",
     "trash": "^10.1.1"
+  },
+  "author": "Wes Roberts",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jchook/caption-tui.git"
+  },
+  "bugs": {
+    "url": "https://github.com/jchook/caption-tui/issues"
+  },
+  "homepage": "https://github.com/jchook/caption-tui#readme",
+  "publishConfig": {
+    "access": "public"
   }
 }

@@ -17,11 +17,14 @@ You've got 500 images, each needing a `.txt` of tags. Instead of opening every f
 
 ## Install
 
-Requires [Node](https://nodejs.org) >= 22
+Requires [Node](https://nodejs.org) >= 22.
 
 ```bash
-pnpm add -g caption-tui
+npm i -g caption-tui     # or: pnpm add -g caption-tui
 ```
+
+That's the whole install — it ships as compiled JavaScript and runs on plain
+Node.
 
 ## Usage
 

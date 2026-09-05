@@ -62,6 +62,44 @@ pnpm link --global        # once; symlinks caption-tui -> dist/index.js (npm: `n
 pnpm dev                  # tsc --watch; recompiles dist/ on save
 ```
 
+## Releasing
+
+Published to npm as [`caption-tui`](https://www.npmjs.com/package/caption-tui).
+The whole ritual is a version bump and a tag:
+
+```bash
+npm version patch        # or minor/major: commits, and tags it v1.0.1
+git push --follow-tags
+```
+
+`.github/workflows/release.yml` fires on any `v*` tag: it checks the tag against
+`package.json` (a mismatch aborts rather than publishing the wrong version under
+a right-looking tag), runs lint + both test runners + the build, then
+`npm publish --provenance`.
+
+Auth is [npm trusted publishing](https://docs.npmjs.com/trusted-publishers) --
+GitHub mints an OIDC token that npm trades for short-lived publish rights, so
+there is no `NPM_TOKEN` secret to leak or rotate. It needs `id-token: write` in
+the workflow and a trusted publisher configured once under the package's
+Settings on npmjs.com. That page only exists once the package does, so **the
+very first publish has to be a manual `npm publish` from a logged-in machine**;
+every release after that is tag-driven.
+
+What ships is `dist/` only (`files` in package.json), built by the `prepare`
+script, which npm runs before pack/publish. Two things to keep true:
+
+- **No `peerDependencies`.** npm auto-installs them, so listing `typescript`
+  there put 3.6MB of compiler in every user's install for a CLI that ships
+  compiled JS. `npm i -g caption-tui` went from 103MB to 72MB when it went.
+- **Nothing in a publish lifecycle script may write to the working tree.**
+  `prepack` used to run `biome check --write .`, which edits source files in the
+  middle of a publish. Linting belongs in CI.
+
+CI packs the tarball, installs it into an empty project and runs the binary,
+which is the only check that catches a file missing from `files`, a broken
+shebang, or a dependency that only ever resolved because it was a
+devDependency.
+
 ## Usage
 
 ```bash
