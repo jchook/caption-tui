@@ -11,7 +11,7 @@ CLI tool for managing image caption files (used for training image models). Give
 
 ## Tech Stack
 
-- **Runtime**: Node (>= 22), managed with **pnpm**. Run TS directly in dev with `tsx` (`pnpm start` → `tsx index.ts`); ship a compiled `dist/` build (`pnpm build` → `tsc -p tsconfig.build.json`). Tests use the built-in Node test runner (`pnpm test` → `node --import tsx --test`).
+- **Runtime**: **Bun** in development (`pnpm start` → `bun index.ts`, `pnpm test` → `bun test`), **Node (>= 22)** for the shipped binary — `pnpm build` compiles `dist/` with a `node` shebang, so installing from the registry needs no Bun. Dependencies are installed with **pnpm**; Bun is the runtime, not the package manager. `pnpm test:node` runs the same suite under `node --test`, which is worth doing before a release. Tests are plain `node:test`/`node:assert` and run unmodified under both. See [docs/bun.md](docs/bun.md) for why this moved off Bun once and back.
 - **TUI Framework**: Ink + React for terminal UI
 - **Image Preview**: two renderers, chosen by the startup probe in `src/utils/terminalProbe.ts` — our own kitty Unicode-placeholder component when kitty is reachable, otherwise ink-picture's text-based protocols (half-block/braille/ascii). See [Image Preview Architecture](#image-preview-architecture).
 
@@ -32,6 +32,7 @@ CLI tool for managing image caption files (used for training image models). Give
 - `src/utils/kittyPlaceholder.ts` - Kitty graphics encoder (diacritics, transmit, tmux passthrough)
 - `src/utils/terminalProbe.ts` - Startup probe for kitty/sixel support + cell pixel size
 - `src/utils/inkControl.ts` - Bridge to the Ink instance's clear() for full repaints
+- `src/utils/editorCommand.ts` - How $EDITOR is invoked (vim gets `set wrap`) + shell quoting
 - `scripts/kitty-smoke-test.ts` - Standalone check that kitty graphics reach the terminal
 
 ## Install
@@ -47,9 +48,10 @@ pnpm add -g caption-tui   # from the registry
 
 ```bash
 pnpm install              # deps (prepare hook also builds dist/)
-pnpm start <dataset>      # run from source via tsx, no build
-pnpm test                 # node --test
-pnpm build                # compile to dist/
+pnpm start <dataset>      # run from source under bun, no build
+pnpm test                 # bun test
+pnpm test:node            # same suite under node --test
+pnpm build                # compile to dist/ (node-targeted, what ships)
 ```
 
 Local global binary — `caption-tui` runs the compiled `dist/`, so link it and keep
@@ -115,6 +117,58 @@ In natural mode, Ctrl-G opens the caption in the user's `$VISUAL`/`$EDITOR` (rea
 - **Otherwise**: full-screen — drops raw mode, leaves the alt screen, runs the editor with inherited stdio, then re-enters the alt screen and calls `inkControl.clear()` (wired in `index.ts`) to force a full Ink repaint.
 
 Editor content is normalized back to a single line (captions are single-line prose).
+
+Two details worth keeping:
+
+- **The caption editor stands down while $EDITOR has it.** In a tmux split our
+  pane is still on screen right above the real editor, and drawing our own
+  caption box next to it is just noise. `NaturalCaptionEditor` stays *mounted*
+  (the handoff promise resolves into it -- unmounting would drop the save) but
+  renders a one-line hint and ignores input, and App gives its rows to the image
+  preview. `useExternalEditor(onOpenChange)` brackets the whole handoff.
+- **vim-family editors are launched with `-c "set wrap"`** (see
+  `src/utils/editorCommand.ts`). Vim wraps by default, but plenty of configs
+  turn it off globally for code, and a caption is one long line of prose. `-c`
+  runs after the file loads, so it beats the user's vimrc. Only vim/nvim/vi/etc.
+  get it -- `-c` means something else entirely to nano and nothing to helix.
+  `$EDITOR` is a command *line*, not a program name (`nvim -u NONE` is legal),
+  so it is split on whitespace and every word is shell-quoted for the tmux pane.
+
+## Frames are expensive; don't repaint what didn't change
+
+Ink's standard renderer rewrites the *entire* frame every time anything changes:
+`eraseLines(n)` then the whole screen again. Writes to a TTY are synchronous, so
+on a link with any latency a frame that big stalls the event loop, which is what
+turns held keys into one coalesced burst (above). Two things follow from that:
+
+- **`incrementalRendering: true`** (set in `index.ts`). Only changed lines are
+  written. Measured on a 120x40 terminal: **2362 -> 256 bytes** per row moved in
+  the list, and **61674 -> 20863** per image change with the preview open. Just
+  as important as the byte count: a frame that doesn't touch the preview now
+  leaves the image's rows alone entirely instead of erasing and redrawing them,
+  which is what made the preview flicker. It used to be off because per-line
+  diffing desynced from the old kitty renderer's absolute-cursor drawing; that
+  renderer is gone and the preview is ordinary text now. `CAPTION_TUI_FULL_REPAINT=1`
+  goes back to whole-frame repaints if a terminal disagrees. Verified by
+  replaying both output streams through a terminal emulator: identical screens.
+- **`InkPictureProvider` is only mounted on the fallback path.** Mounting it
+  regardless ran a second capability probe -- query escape codes written to the
+  terminal, replies landing in Ink's stdin -- for a component the kitty path
+  never renders. It also monkey-patches `stdin.push`, which under Bun left stdin
+  unusable and hung the app on quit.
+
+The preview has its own two rules, both in `KittyPlaceholderImage.tsx`:
+
+- **Decoding is debounced (`TRANSMIT_DEBOUNCE_MS`).** Holding the down arrow
+  changes `src` far faster than a PNG can be decoded, and each decode blocks the
+  event loop for an image already scrolled past. Wait for the selection to
+  settle; the previous image stays on screen meanwhile.
+- **A replaced image is freed on a delay (`RETIRE_GRACE_MS`), never immediately.**
+  The placeholder cells on screen still point at the old image until Ink paints
+  the new ones. Deleting it the instant its successor was transmitted blanked
+  the pane on every single move -- and inside tmux, where a passthrough escape
+  code reaches the terminal ahead of the pane's queued redraw, that gap is wide
+  enough to watch. Retired ids are flushed after the grace period and on unmount.
 
 ## Deleting images (Shift-D)
 
@@ -236,6 +290,7 @@ detach/reattach to a different terminal.
 ```bash
 pnpm tsx scripts/kitty-smoke-test.ts [image]   # bypasses Ink entirely
 CAPTION_TUI_DEBUG=1 caption-tui <dataset>      # logs probe + chosen renderer
+CAPTION_TUI_FULL_REPAINT=1 caption-tui <ds>    # whole-frame repaints, not incremental
 ```
 
 The smoke test prints the placeholder grid with plain `console.log`, so if it
