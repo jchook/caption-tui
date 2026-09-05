@@ -5,15 +5,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { useStdin } from "ink";
 import { useCallback } from "react";
+import {
+  buildEditorCommand,
+  resolveEditor,
+  toShellCommand,
+} from "../utils/editorCommand.js";
 import { inkControl } from "../utils/inkControl.js";
 
 const ENTER_ALT_SCREEN = "\x1b[?1049h\x1b[H";
 const LEAVE_ALT_SCREEN = "\x1b[?1049l";
-
-/** $VISUAL/$EDITOR, falling back to a sensible terminal editor. */
-function resolveEditor(): string {
-  return process.env.VISUAL || process.env.EDITOR || "nano";
-}
 
 /**
  * Captions are single-line prose, so fold whatever the editor saved (possibly
@@ -41,7 +41,7 @@ async function editInTmuxSplit(editor: string, file: string): Promise<boolean> {
 
   // The new pane opens below and takes focus, so keystrokes go to the editor
   // while our (now upper) pane keeps rendering the image.
-  const paneCmd = `${editor} '${file}'; tmux wait-for -S ${channel}`;
+  const paneCmd = `${toShellCommand(buildEditorCommand(editor, file))}; tmux wait-for -S ${channel}`;
   const split = spawnSync("tmux", ["split-window", "-v", paneCmd], {
     stdio: "ignore",
   });
@@ -67,8 +67,8 @@ function editFullScreen(
   process.stdin.pause();
   process.stdout.write(LEAVE_ALT_SCREEN);
 
-  const [cmd, ...args] = editor.split(/\s+/);
-  spawnSync(cmd ?? "nano", [...args, file], { stdio: "inherit" });
+  const { command, args } = buildEditorCommand(editor, file);
+  spawnSync(command, args, { stdio: "inherit" });
 
   process.stdout.write(ENTER_ALT_SCREEN);
   process.stdin.resume();
@@ -80,10 +80,14 @@ function editFullScreen(
 /**
  * Returns a function that opens the given text in the user's $EDITOR and
  * resolves with the edited text (or null if editing wasn't possible).
+ *
+ * `onOpenChange` brackets the handoff so the app can stand down while the
+ * editor has the keyboard -- in a tmux split our pane is still on screen, and
+ * showing our own caption editor next to the real one is just noise.
  */
-export function useExternalEditor(): (
-  initialText: string,
-) => Promise<string | null> {
+export function useExternalEditor(
+  onOpenChange?: (open: boolean) => void,
+): (initialText: string) => Promise<string | null> {
   const { setRawMode, isRawModeSupported } = useStdin();
 
   return useCallback(
@@ -93,6 +97,7 @@ export function useExternalEditor(): (
       const editor = resolveEditor();
       const file = join(tmpdir(), `caption-tui-${randomUUID()}.txt`);
       writeFileSync(file, initialText);
+      onOpenChange?.(true);
 
       try {
         const usedTmux = process.env.TMUX
@@ -105,9 +110,10 @@ export function useExternalEditor(): (
       } catch {
         return null;
       } finally {
+        onOpenChange?.(false);
         rmSync(file, { force: true });
       }
     },
-    [setRawMode, isRawModeSupported],
+    [setRawMode, isRawModeSupported, onOpenChange],
   );
 }

@@ -2,6 +2,7 @@ import { Box, Text, useInput } from "ink";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useExternalEditor } from "../hooks/useExternalEditor.js";
 import type { ImageEntry } from "../utils/dataset.js";
+import { editorName, resolveEditor } from "../utils/editorCommand.js";
 import {
   deleteWordBefore,
   wordLeftIndex,
@@ -14,6 +15,11 @@ interface NaturalCaptionEditorProps {
   onNext: () => void;
   onPrev: () => void;
   onClose: () => void;
+  /**
+   * Called with `true` while $EDITOR has the caption (Ctrl-G) and `false` when
+   * it hands it back, so the app can give the editor's rows to the preview.
+   */
+  onExternalEdit?: (open: boolean) => void;
 }
 
 interface EditorState {
@@ -27,13 +33,29 @@ export function NaturalCaptionEditor({
   onNext,
   onPrev,
   onClose,
+  onExternalEdit,
 }: NaturalCaptionEditorProps) {
   const [state, setState] = useState<EditorState>(() => ({
     text: entry.caption,
     cursor: entry.caption.length,
   }));
   const { text, cursor } = state;
-  const launchExternalEditor = useExternalEditor();
+
+  // While $EDITOR has the caption, this editor stays mounted -- the handoff
+  // resolves into it -- but stops drawing itself and stops taking keys. In a
+  // tmux split the real editor is right below us, and two caption editors on
+  // one screen is just noise.
+  const [externalOpen, setExternalOpen] = useState(false);
+  const externalOpenRef = useRef(false);
+  const handleExternalOpenChange = useCallback(
+    (open: boolean) => {
+      externalOpenRef.current = open;
+      setExternalOpen(open);
+      onExternalEdit?.(open);
+    },
+    [onExternalEdit],
+  );
+  const launchExternalEditor = useExternalEditor(handleExternalOpenChange);
 
   // Mirror the latest committed state so handlers that read the caption
   // (save/nav/$EDITOR) never use a stale closure value mid-keystroke-batch.
@@ -67,6 +89,10 @@ export function NaturalCaptionEditor({
   }, [launchExternalEditor, update, onSave]);
 
   useInput((input, key) => {
+    // The editor in the tmux split owns the keyboard; anything reaching us is
+    // a stray. (The full-screen path blocks this process outright.)
+    if (externalOpenRef.current) return;
+
     if (key.escape) {
       onSave(stateRef.current.text);
       onClose();
@@ -185,6 +211,17 @@ export function NaturalCaptionEditor({
       }
     }
   });
+
+  if (externalOpen) {
+    return (
+      <Box>
+        <Text dimColor>
+          Editing {entry.name} in {editorName(resolveEditor())} - save and close
+          it to come back
+        </Text>
+      </Box>
+    );
+  }
 
   const before = text.slice(0, cursor);
   const underCursor = text.slice(cursor, cursor + 1) || " ";

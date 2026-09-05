@@ -36,6 +36,9 @@ const COMPACT_LIST_ROWS = 3;
 // Minimum rows kept for the caption editor so the preview height stays a pure
 // function of the terminal size (and never shifts as you type).
 const EDITOR_MIN_ROWS = 7;
+// While $EDITOR has the caption there is no caption editor to make room for --
+// just the one-line "editing in nvim" hint, and the preview takes the rest.
+const EXTERNAL_EDIT_ROWS = 1;
 
 interface AppProps {
   datasetPath: string;
@@ -67,6 +70,11 @@ export function App({ datasetPath, mode = "tags", graphics }: AppProps) {
   const [deleting, setDeleting] = useState(false);
   // Guards against a burst of confirm keys firing the same delete twice.
   const deletingRef = useRef(false);
+
+  // True while the caption is open in $EDITOR (Ctrl-G, natural mode). Our own
+  // editor stands down and the preview takes its rows -- in a tmux split this
+  // pane is still on screen next to the real editor.
+  const [externalEditing, setExternalEditing] = useState(false);
 
   const editingIndexRef = useRef<number | null>(null);
   const setEditing = useCallback((index: number | null) => {
@@ -359,7 +367,9 @@ export function App({ datasetPath, mode = "tags", graphics }: AppProps) {
   // resizes (and never has to be re-transmitted) while you type.
   const previewHeight = Math.max(
     5,
-    appRows - COMPACT_LIST_ROWS - EDITOR_MIN_ROWS,
+    appRows -
+      COMPACT_LIST_ROWS -
+      (externalEditing ? EXTERNAL_EDIT_ROWS : EDITOR_MIN_ROWS),
   );
 
   const content = (
@@ -444,6 +454,7 @@ export function App({ datasetPath, mode = "tags", graphics }: AppProps) {
               onNext={handleNext}
               onPrev={handlePrev}
               onClose={handleClose}
+              onExternalEdit={setExternalEditing}
             />
           ) : (
             <CaptionEditor
