@@ -5,7 +5,11 @@ import type { ImageEntry } from "../utils/dataset.js";
 import { DeleteConfirm, deleteConfirmRows } from "./DeleteConfirm.js";
 
 const ESC = "\u001B";
-const flush = () => new Promise((r) => setTimeout(r, 20));
+// Ink holds a lone Esc for 20ms before emitting it, to tell it apart from the
+// start of an escape sequence (ink/build/components/App.js,
+// pendingInputFlushDelayMilliseconds). Anything below that reads a test's Esc as
+// "no key pressed at all".
+const flush = () => new Promise((r) => setTimeout(r, 40));
 
 const entry: ImageEntry = {
   name: "img_007.png",

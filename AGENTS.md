@@ -12,7 +12,7 @@ CLI tool for managing image caption files (used for training image models). Give
 ## Tech Stack
 
 - **Runtime**: **Bun** in development (`pnpm start` → `bun index.ts`, `pnpm test` → `bun test`), **Node (>= 22)** for the shipped binary — `pnpm build` compiles `dist/` with a `node` shebang, so installing from the registry needs no Bun. Dependencies are installed with **pnpm**; Bun is the runtime, not the package manager. `pnpm test:node` runs the same suite under `node --test`, which is worth doing before a release. Tests are plain `node:test`/`node:assert` and run unmodified under both. See [docs/bun.md](docs/bun.md) for why this moved off Bun once and back.
-- **TUI Framework**: Ink + React for terminal UI
+- **TUI Framework**: Ink (>= 7) + React for terminal UI. The version floor is not cosmetic — see [Frames are expensive](#frames-are-expensive-dont-repaint-what-didnt-change).
 - **Image Preview**: two renderers, chosen by the startup probe in `src/utils/terminalProbe.ts` — our own kitty Unicode-placeholder component when kitty is reachable, otherwise ink-picture's text-based protocols (half-block/braille/ascii). See [Image Preview Architecture](#image-preview-architecture).
 
 ## Key Files
@@ -148,9 +148,24 @@ turns held keys into one coalesced burst (above). Two things follow from that:
   leaves the image's rows alone entirely instead of erasing and redrawing them,
   which is what made the preview flicker. It used to be off because per-line
   diffing desynced from the old kitty renderer's absolute-cursor drawing; that
-  renderer is gone and the preview is ordinary text now. `CAPTION_TUI_FULL_REPAINT=1`
-  goes back to whole-frame repaints if a terminal disagrees. Verified by
-  replaying both output streams through a terminal emulator: identical screens.
+  renderer is gone and the preview is ordinary text now.
+  `CAPTION_TUI_FULL_REPAINT=1` goes back to whole-frame repaints.
+
+  **This needs Ink >= 7.** Incremental rendering rewrites changed lines by
+  walking the cursor from the bottom of the previous frame back up to the top,
+  and our frames end with a newline -- App renders one row short of the terminal
+  to stay off the fullscreen path, and Ink appends `"\n"` to anything that isn't
+  fullscreen, which leaves the cursor one row *below* the block. Ink 6.8.0
+  didn't account for that and moved up one row too few, so every line landed one
+  row low: the highlighted first row of the list stuck at the top under a
+  duplicate of itself, on every keypress. Ink 7 measures the walk from the raw
+  line count and gets it right. `src/utils/inkIncrementalRenderer.test.ts`
+  asserts the behaviour (not the version) against Ink's own log-update, so a
+  future bump can't quietly reintroduce it.
+
+  Both renderers were checked frame by frame, in the list and with the preview
+  open, by replaying their output through a terminal emulator: on Ink 6, 34 of
+  34 keypresses rendered differently; on Ink 7, 0 of 34.
 - **`InkPictureProvider` is only mounted on the fallback path.** Mounting it
   regardless ran a second capability probe -- query escape codes written to the
   terminal, replies landing in Ink's stdin -- for a component the kitty path
@@ -194,6 +209,12 @@ hides this entirely, so the regression tests fill the terminal.
   agreed to trash the file, which is a different promise from deleting it.
 - The caption is only removed when nothing else points at it, so deleting one of
   `image1.jpg` / `image1.png` leaves the shared `image1.txt` for the survivor.
+
+**Ink holds a lone Esc for 20ms** before emitting it, to tell it apart from the
+start of an escape sequence (`pendingInputFlushDelayMilliseconds` in
+`ink/build/components/App.js`). A test that writes Esc and waits less than that
+sees no key at all, which reads as "the handler is broken" rather than "the test
+is too fast" -- the `flush()` helpers are all above it for that reason.
 
 Tests deliberately never confirm a trash: that would put files in the
 developer's real trash. `DeleteConfirm.test.tsx` covers the keys against the

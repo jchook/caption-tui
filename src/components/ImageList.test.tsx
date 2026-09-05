@@ -20,7 +20,11 @@ const CTRL_U = "\u0015";
 const CTRL_F = "\u0006";
 const CTRL_B = "\u0002";
 
-const flush = () => new Promise((r) => setTimeout(r, 20));
+// Ink holds a lone Esc for 20ms before emitting it, to tell it apart from the
+// start of an escape sequence (ink/build/components/App.js,
+// pendingInputFlushDelayMilliseconds). Anything below that reads a test's Esc as
+// "no key pressed at all".
+const flush = () => new Promise((r) => setTimeout(r, 40));
 
 // Mirrors App: selection lives in the parent, ImageList drives it.
 function Harness({ report }: { report: (i: number) => void }) {

@@ -12,7 +12,11 @@ const entry: ImageEntry = {
   caption: "person, portrait, outdoors",
 };
 
-const flush = () => new Promise((r) => setTimeout(r, 15));
+// Ink holds a lone Esc for 20ms before emitting it, to tell it apart from the
+// start of an escape sequence (ink/build/components/App.js,
+// pendingInputFlushDelayMilliseconds). Anything below that reads a test's Esc as
+// "no key pressed at all".
+const flush = () => new Promise((r) => setTimeout(r, 40));
 
 test("typed characters accumulate and save (a render between every key)", async () => {
   const captured: { saved: string[] | null } = { saved: null };
