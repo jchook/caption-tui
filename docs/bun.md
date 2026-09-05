@@ -6,17 +6,20 @@ This doc records both halves so neither decision gets re-litigated from memory.
 
 ## Where it stands
 
-- `pnpm start` and `pnpm test` run under **Bun** (`bun index.ts`, `bun test`).
-  Bun runs the TypeScript directly, so there is no `tsx` in the loop.
-- `pnpm test:node` still runs the same suite under `node --test`. The tests are
-  plain `node:test` + `node:assert`, which Bun's runner executes as-is, so both
-  paths exercise identical code.
-- The **shipped** binary is still Node: `pnpm build` compiles to `dist/` with a
+- **Bun is the development toolchain**: `bun install` (with `bun.lock`),
+  `bun start <dataset>` to run from source with no build step, and `bun test`
+  for the suite. Bun runs the TypeScript directly, so there is no `tsx` in the
+  loop.
+- `bun run test:node` still runs the same suite under `node --test`. The tests
+  are plain `node:test` + `node:assert`, which Bun's runner executes as-is, so
+  both paths exercise identical code. Worth running before a release.
+- The **shipped** binary is Node: `bun run build` compiles to `dist/` with a
   `#!/usr/bin/env node` shebang, and `bin` points there. Anyone installing
   `caption-tui` from the registry gets a plain Node CLI and needs no Bun.
-- Dependencies are still installed with **pnpm** (`pnpm-lock.yaml`). Bun is the
-  runtime here, not the package manager; there is no reason to carry two
-  lockfiles.
+- **Publishing goes through npm**, not `bun publish`, which does not do
+  provenance or trusted publishing. See "Releasing" in AGENTS.md.
+- There is no `packageManager` field: it is a Corepack field, and Corepack has
+  no Bun support.
 
 ## Why it moved to Node in the first place
 
@@ -50,6 +53,7 @@ Verified before switching back, on Bun 1.4.0:
 | Full suite under `bun test` | 96 pass, 0 fail -- same as `node --test` |
 | Startup probe reading real terminal replies (fed a canned kitty/DA/cell-size response over a pty) | `supportsKittyGraphics: true`, cell size read from the reply, kitty renderer selected -- identical to Node |
 | App in a pty: render, scroll, open the editor, quit | Byte-for-byte comparable output to Node, clean exit |
+| `bun install` from a clean checkout (added when installs moved over too) | 199 packages in ~1.4s, `prepare` runs, build + both test runners + `npm pack` all work off it |
 
 The one Bun-only failure found along the way was the app hanging on quit after
 opening the preview -- and it was `InkPictureProvider`'s detection, patching

@@ -11,7 +11,7 @@ CLI tool for managing image caption files (used for training image models). Give
 
 ## Tech Stack
 
-- **Runtime**: **Bun** in development (`pnpm start` → `bun index.ts`, `pnpm test` → `bun test`), **Node (>= 22)** for the shipped binary — `pnpm build` compiles `dist/` with a `node` shebang, so installing from the registry needs no Bun. Dependencies are installed with **pnpm**; Bun is the runtime, not the package manager. `pnpm test:node` runs the same suite under `node --test`, which is worth doing before a release. Tests are plain `node:test`/`node:assert` and run unmodified under both. See [docs/bun.md](docs/bun.md) for why this moved off Bun once and back.
+- **Toolchain**: **Bun** for everything in development — installs (`bun.lock`), running from source, and the test runner. **Node (>= 22)** is what ships: `bun run build` compiles `dist/` with a `node` shebang, so installing from the registry needs no Bun. `bun run test:node` runs the same suite under `node --test`, which is worth doing before a release; the tests are plain `node:test`/`node:assert` and run unmodified under both. Publishing goes through npm (`bun publish` does no provenance or trusted publishing). See [docs/bun.md](docs/bun.md) for why this moved off Bun once and back.
 - **TUI Framework**: Ink (>= 7) + React for terminal UI. The version floor is not cosmetic — see [Frames are expensive](#frames-are-expensive-dont-repaint-what-didnt-change).
 - **Image Preview**: two renderers, chosen by the startup probe in `src/utils/terminalProbe.ts` — our own kitty Unicode-placeholder component when kitty is reachable, otherwise ink-picture's text-based protocols (half-block/braille/ascii). See [Image Preview Architecture](#image-preview-architecture).
 
@@ -37,29 +37,29 @@ CLI tool for managing image caption files (used for training image models). Give
 
 ## Install
 
-Requires Node >= 22. `pnpm` is the default, but `npm` works — swap `pnpm` → `npm`
-(prefix scripts with `run`, e.g. `npm run dev`).
+Requires Node >= 22.
 
 ```bash
-pnpm add -g caption-tui   # from the registry
+npm i -g caption-tui      # from the registry; ships as plain JS, no Bun needed
 ```
 
 ## Development
 
 ```bash
-pnpm install              # deps (prepare hook also builds dist/)
-pnpm start <dataset>      # run from source under bun, no build
-pnpm test                 # bun test
-pnpm test:node            # same suite under node --test
-pnpm build                # compile to dist/ (node-targeted, what ships)
+bun install               # deps (the prepare hook also builds dist/)
+bun start <dataset>       # run from source, no build step
+bun test                  # the suite, under Bun
+bun run test:node         # the same suite under node --test
+bun run build             # compile to dist/ (node-targeted, what ships)
+bun run check             # biome format + lint, writing fixes
 ```
 
 Local global binary — `caption-tui` runs the compiled `dist/`, so link it and keep
 a watch build running for live edits:
 
 ```bash
-pnpm link --global        # once; symlinks caption-tui -> dist/index.js (npm: `npm link`)
-pnpm dev                  # tsc --watch; recompiles dist/ on save
+bun link                  # once; symlinks caption-tui -> dist/index.js
+bun run dev               # tsc --watch; recompiles dist/ on save
 ```
 
 ## Releasing
@@ -86,7 +86,8 @@ very first publish has to be a manual `npm publish` from a logged-in machine**;
 every release after that is tag-driven.
 
 What ships is `dist/` only (`files` in package.json), built by the `prepare`
-script, which npm runs before pack/publish. Two things to keep true:
+script, which both `bun install` and npm's pack/publish run. Three things to
+keep true:
 
 - **No `peerDependencies`.** npm auto-installs them, so listing `typescript`
   there put 3.6MB of compiler in every user's install for a CLI that ships
@@ -94,6 +95,10 @@ script, which npm runs before pack/publish. Two things to keep true:
 - **Nothing in a publish lifecycle script may write to the working tree.**
   `prepack` used to run `biome check --write .`, which edits source files in the
   middle of a publish. Linting belongs in CI.
+- **No `packageManager` field.** That is a Corepack field, and Corepack has no
+  Bun support, so a `bun@x` value there is decorative at best and can make a
+  Corepack-enabled npm refuse to run. The toolchain is documented here and
+  pinned in the workflows instead.
 
 CI packs the tarball, installs it into an empty project and runs the binary,
 which is the only check that catches a file missing from `files`, a broken
@@ -347,7 +352,7 @@ detach/reattach to a different terminal.
 ### Debugging
 
 ```bash
-pnpm tsx scripts/kitty-smoke-test.ts [image]   # bypasses Ink entirely
+bun scripts/kitty-smoke-test.ts [image]        # bypasses Ink entirely
 CAPTION_TUI_DEBUG=1 caption-tui <dataset>      # logs probe + chosen renderer
 CAPTION_TUI_FULL_REPAINT=1 caption-tui <ds>    # whole-frame repaints, not incremental
 ```

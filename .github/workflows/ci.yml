@@ -11,33 +11,30 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: pnpm/action-setup@v4
-
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 24
-          cache: pnpm
-
-      # `pnpm test` runs the suite under Bun; `pnpm test:node` runs the same
-      # files under node --test. Both matter: Bun is the development runtime,
-      # Node is what ships.
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.0
 
-      - run: pnpm install --frozen-lockfile
+      # Node as well as Bun: `bun run test:node` runs the suite under
+      # `node --test`, and Node is what the published binary runs on.
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
 
-      - run: pnpm check:ci
-      - run: pnpm test
-      - run: pnpm test:node
-      - run: pnpm build
+      - run: bun install --frozen-lockfile
+
+      - run: bun run check:ci
+      - run: bun test
+      - run: bun run test:node
+      - run: bun run build
 
       # The thing users actually get. Packing and running it catches what the
-      # test suite cannot: a file missing from `files`, a broken shebang, a
-      # dependency that only resolved because it was a devDependency.
+      # test suite cannot: a file missing from `files`, a broken shebang, or a
+      # dependency that only resolved because it was a devDependency. Packed
+      # with npm, because npm is what publishes it.
       - name: Install the packed tarball and run it
         run: |
-          tarball="$(pnpm pack | tail -1)"
+          tarball="$(npm pack | tail -1)"
           mkdir -p "$RUNNER_TEMP/smoke" && cd "$RUNNER_TEMP/smoke"
           npm init -y >/dev/null
           npm install --no-audit --no-fund "$GITHUB_WORKSPACE/$tarball"
