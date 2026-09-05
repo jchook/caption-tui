@@ -11,11 +11,12 @@
     "dist"
   ],
   "scripts": {
-    "start": "tsx index.ts",
+    "start": "bun index.ts",
     "build": "tsc -p tsconfig.build.json",
     "dev": "tsc -p tsconfig.build.json --watch",
     "prepare": "tsc -p tsconfig.build.json",
-    "test": "node --import tsx --test \"src/**/*.test.ts\" \"src/**/*.test.tsx\"",
+    "test": "bun test",
+    "test:node": "node --import tsx --test \"src/**/*.test.ts\" \"src/**/*.test.tsx\"",
     "format": "biome format --write .",
     "lint": "biome lint --write .",
     "check": "biome check --write .",
