@@ -100,17 +100,33 @@ export function App({ datasetPath, mode = "tags", graphics }: AppProps) {
     : undefined;
 
   // Diagnostic hook: set CAPTION_TUI_DEBUG=1 (or to a file path) to log what
-  // ink-picture actually detected. stdout is owned by the TUI, so we append to a
-  // file. Reveals whether supportsKittyGraphics came back false (detection) vs.
-  // some other reason the native protocol isn't being used. The env vars matter
-  // because tmux/screen and TERM_PROGRAM change how graphics protocols resolve.
-  const logDetection = useCallback(
-    (info: TerminalInfo) => {
-      const dbg = process.env.CAPTION_TUI_DEBUG;
-      if (!dbg) return;
-      const logPath =
-        dbg === "1" || dbg === "true" ? "caption-tui-debug.log" : dbg;
-      const env = {
+  // was detected and which renderer that picked. stdout is owned by the TUI, so
+  // we append to a file. Reveals whether supportsKittyGraphics came back false
+  // (detection) vs. some other reason the native protocol isn't being used. The
+  // env vars matter because tmux/screen and TERM_PROGRAM change how graphics
+  // protocols resolve.
+  const logDebug = useCallback((payload: Record<string, unknown>) => {
+    const dbg = process.env.CAPTION_TUI_DEBUG;
+    if (!dbg) return;
+    const logPath =
+      dbg === "1" || dbg === "true" ? "caption-tui-debug.log" : dbg;
+    try {
+      appendFileSync(logPath, `${JSON.stringify(payload, null, 2)}\n`);
+    } catch {
+      // Best-effort diagnostics only.
+    }
+  }, []);
+
+  // Logged on mount rather than from ink-picture's detection callback: that
+  // callback only fires on the fallback path, so wiring the log to it meant the
+  // kitty path -- the one people actually debug -- logged nothing at all.
+  useEffect(() => {
+    logDebug({
+      probed: graphics,
+      renderer: useKittyPlaceholders
+        ? "kitty-unicode-placeholders"
+        : "ink-picture",
+      env: {
         TERM: process.env.TERM,
         TERM_PROGRAM: process.env.TERM_PROGRAM,
         TERM_PROGRAM_VERSION: process.env.TERM_PROGRAM_VERSION,
@@ -118,19 +134,14 @@ export function App({ datasetPath, mode = "tags", graphics }: AppProps) {
         TMUX: process.env.TMUX,
         STY: process.env.STY,
         COLORTERM: process.env.COLORTERM,
-      };
-      try {
-        appendFileSync(
-          logPath,
-          // `probed` is our own startup probe (the source of truth we feed in);
-          // `libDetected` is ink-picture's own in-render detection, for comparison.
-          `${JSON.stringify({ probed: graphics, renderer: useKittyPlaceholders ? "kitty-unicode-placeholders" : "ink-picture", libDetected: info, env }, null, 2)}\n`,
-        );
-      } catch {
-        // Best-effort diagnostics only.
-      }
-    },
-    [graphics, useKittyPlaceholders],
+      },
+    });
+  }, [logDebug, graphics, useKittyPlaceholders]);
+
+  // ink-picture's own in-render detection, for comparison with `probed` above.
+  const logDetection = useCallback(
+    (info: TerminalInfo) => logDebug({ libDetected: info }),
+    [logDebug],
   );
 
   // Load dataset on mount
@@ -351,106 +362,116 @@ export function App({ datasetPath, mode = "tags", graphics }: AppProps) {
     appRows - COMPACT_LIST_ROWS - EDITOR_MIN_ROWS,
   );
 
+  const content = (
+    <Box
+      flexDirection="column"
+      width={columns}
+      height={appRows}
+      overflow="hidden"
+    >
+      {/* Image list */}
+      <Box flexShrink={0} flexDirection="column">
+        <ImageList
+          entries={entries}
+          selectedIndex={selectedIndex}
+          onSelect={setSelectedIndex}
+          onEdit={handleEdit}
+          onRequestDelete={handleRequestDelete}
+          maxVisible={isEditing ? COMPACT_LIST_ROWS : listMaxVisible}
+          disabled={isEditing || pendingDelete !== null}
+          compact={isEditing}
+          mode={mode}
+        />
+      </Box>
+
+      {/* Delete confirmation (list mode only; owns input while open) */}
+      {deleteTarget && deleteFiles && (
+        <Box flexShrink={0}>
+          <DeleteConfirm
+            entry={deleteTarget}
+            files={deleteFiles}
+            trashError={trashError}
+            busy={deleting}
+            onConfirm={handleConfirmDelete}
+            onCancel={handleCancelDelete}
+          />
+        </Box>
+      )}
+
+      {/* Image preview - rendered at top level */}
+      {editingEntry && (
+        <Box height={previewHeight} flexShrink={0} width={columns}>
+          {useKittyPlaceholders ? (
+            <KittyPlaceholderImage
+              src={editingEntry.imagePath}
+              maxColumns={columns}
+              maxRows={previewHeight}
+              cellWidth={graphics?.cellWidth}
+              cellHeight={graphics?.cellHeight}
+              insideTmux={graphics?.insideTmux}
+            />
+          ) : (
+            /* Explicit cell dimensions (not width="100%") so ink-picture never
+               depends on measureElement, which races on mount and can resolve to
+               0 -> the decode is skipped and the pane hangs on "Loading...". */
+            <Image
+              src={editingEntry.imagePath}
+              width={columns}
+              height={previewHeight}
+              objectFit="contain"
+            />
+          )}
+        </Box>
+      )}
+
+      {/* kitty is right there, but tmux would eat the graphics escape codes.
+          Surface the one-line fix rather than silently dropping to blocks. */}
+      {isEditing && graphics?.kittyNeedsTmuxPassthrough && (
+        <Box flexShrink={0}>
+          <Text dimColor>
+            kitty images need: tmux set -g allow-passthrough on
+          </Text>
+        </Box>
+      )}
+
+      {/* Caption editor (shown when editing) */}
+      {editingEntry && (
+        <Box flexGrow={1} flexShrink={1} minHeight={0} overflow="hidden">
+          {isNatural ? (
+            <NaturalCaptionEditor
+              entry={editingEntry}
+              onSave={(caption) => handleSaveCaption(editingEntry, caption)}
+              onNext={handleNext}
+              onPrev={handlePrev}
+              onClose={handleClose}
+            />
+          ) : (
+            <CaptionEditor
+              entry={editingEntry}
+              allTags={allTags}
+              onSave={(tags) => handleSave(editingEntry, tags)}
+              onNext={handleNext}
+              onPrev={handlePrev}
+              onClose={handleClose}
+            />
+          )}
+        </Box>
+      )}
+    </Box>
+  );
+
+  // ink-picture is only on screen when the preview falls back to its text
+  // protocols. Mounting its provider regardless costs a second capability
+  // probe -- more query escape codes written to the terminal, whose replies
+  // land in Ink's stdin -- for a component this path never renders.
+  if (useKittyPlaceholders) return content;
+
   return (
     <InkPictureProvider
       terminalInfo={terminalInfo}
       onTerminalInfoDetection={logDetection}
     >
-      <Box
-        flexDirection="column"
-        width={columns}
-        height={appRows}
-        overflow="hidden"
-      >
-        {/* Image list */}
-        <Box flexShrink={0} flexDirection="column">
-          <ImageList
-            entries={entries}
-            selectedIndex={selectedIndex}
-            onSelect={setSelectedIndex}
-            onEdit={handleEdit}
-            onRequestDelete={handleRequestDelete}
-            maxVisible={isEditing ? COMPACT_LIST_ROWS : listMaxVisible}
-            disabled={isEditing || pendingDelete !== null}
-            compact={isEditing}
-            mode={mode}
-          />
-        </Box>
-
-        {/* Delete confirmation (list mode only; owns input while open) */}
-        {deleteTarget && deleteFiles && (
-          <Box flexShrink={0}>
-            <DeleteConfirm
-              entry={deleteTarget}
-              files={deleteFiles}
-              trashError={trashError}
-              busy={deleting}
-              onConfirm={handleConfirmDelete}
-              onCancel={handleCancelDelete}
-            />
-          </Box>
-        )}
-
-        {/* Image preview - rendered at top level */}
-        {editingEntry && (
-          <Box height={previewHeight} flexShrink={0} width={columns}>
-            {useKittyPlaceholders ? (
-              <KittyPlaceholderImage
-                src={editingEntry.imagePath}
-                maxColumns={columns}
-                maxRows={previewHeight}
-                cellWidth={graphics?.cellWidth}
-                cellHeight={graphics?.cellHeight}
-                insideTmux={graphics?.insideTmux}
-              />
-            ) : (
-              /* Explicit cell dimensions (not width="100%") so ink-picture never
-                 depends on measureElement, which races on mount and can resolve to
-                 0 -> the decode is skipped and the pane hangs on "Loading...". */
-              <Image
-                src={editingEntry.imagePath}
-                width={columns}
-                height={previewHeight}
-                objectFit="contain"
-              />
-            )}
-          </Box>
-        )}
-
-        {/* kitty is right there, but tmux would eat the graphics escape codes.
-            Surface the one-line fix rather than silently dropping to blocks. */}
-        {isEditing && graphics?.kittyNeedsTmuxPassthrough && (
-          <Box flexShrink={0}>
-            <Text dimColor>
-              kitty images need: tmux set -g allow-passthrough on
-            </Text>
-          </Box>
-        )}
-
-        {/* Caption editor (shown when editing) */}
-        {editingEntry && (
-          <Box flexGrow={1} flexShrink={1} minHeight={0} overflow="hidden">
-            {isNatural ? (
-              <NaturalCaptionEditor
-                entry={editingEntry}
-                onSave={(caption) => handleSaveCaption(editingEntry, caption)}
-                onNext={handleNext}
-                onPrev={handlePrev}
-                onClose={handleClose}
-              />
-            ) : (
-              <CaptionEditor
-                entry={editingEntry}
-                allTags={allTags}
-                onSave={(tags) => handleSave(editingEntry, tags)}
-                onNext={handleNext}
-                onPrev={handlePrev}
-                onClose={handleClose}
-              />
-            )}
-          </Box>
-        )}
-      </Box>
+      {content}
     </InkPictureProvider>
   );
 }

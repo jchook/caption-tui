@@ -106,15 +106,24 @@ const graphics = await probeTerminal();
 
 // App renders one row short of the terminal height (see appRows in App.tsx) so
 // Ink stays on its standard render path instead of the fullscreen one, which
-// repaints every frame with ansiEscapes.clearTerminal and flickers. We also
-// deliberately do NOT use incrementalRendering: its per-line diffing has
-// historically desynced from graphics output and corrupted the text below the
-// preview (stacked borders, overlapping rows). Worth revisiting if list latency
-// over slow links ever matters again: with the sticky scroll window in
-// src/utils/listViewport.ts, a one-row move measured 340 bytes incrementally vs
-// 4206 for the whole frame.
+// repaints every frame with ansiEscapes.clearTerminal and flickers.
+//
+// Incremental rendering writes only the lines that changed instead of erasing
+// and rewriting the whole frame. Measured on a 120x40 terminal: 2362 -> 256
+// bytes per row moved in the list, and the image preview's placeholder rows are
+// left untouched entirely by a frame that didn't change them, instead of being
+// erased and redrawn. Over a link where a blocking write to the tty stalls the
+// event loop (see the input-burst note in AGENTS.md), that is the difference
+// between "snappy" and "keys queue up and replay a second later".
+//
+// It used to be off because its per-line diffing desynced from the *old*
+// preview renderer, which drew kitty graphics at absolute cursor positions
+// outside Ink's model. That renderer is gone -- the preview is Unicode
+// placeholder text now, which diffs like any other text. CAPTION_TUI_FULL_REPAINT=1
+// goes back to whole-frame repaints if a terminal disagrees.
 const instance = render(
   React.createElement(App, { datasetPath, mode, graphics }),
+  { incrementalRendering: process.env.CAPTION_TUI_FULL_REPAINT !== "1" },
 );
 const { waitUntilExit } = instance;
 

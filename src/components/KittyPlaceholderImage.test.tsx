@@ -6,9 +6,18 @@ import { test } from "node:test";
 import { render } from "ink-testing-library";
 import { Jimp } from "jimp";
 import { PLACEHOLDER_CHAR } from "../utils/kittyPlaceholder.js";
-import { KittyPlaceholderImage } from "./KittyPlaceholderImage.js";
+import {
+  KittyPlaceholderImage,
+  RETIRE_GRACE_MS,
+  TRANSMIT_DEBOUNCE_MS,
+} from "./KittyPlaceholderImage.js";
 
-const flush = () => new Promise((r) => setTimeout(r, 120));
+/** Long enough for the transmit debounce plus a PNG decode. */
+const flush = () =>
+  new Promise((r) => setTimeout(r, TRANSMIT_DEBOUNCE_MS + 150));
+/** ...and for a replaced image's grace period to run out on top of that. */
+const flushRetire = () =>
+  new Promise((r) => setTimeout(r, RETIRE_GRACE_MS + 200));
 
 const dir = mkdtempSync(join(tmpdir(), "caption-tui-kitty-"));
 
@@ -93,7 +102,12 @@ test("frees the image from the terminal on unmount", async () => {
   );
 });
 
-test("swapping the image retires the previous one", async () => {
+test("the replaced image outlives the frame that still shows it", async () => {
+  // The placeholder cells on screen keep pointing at the old image until Ink
+  // paints the new ones. Freeing it as soon as the replacement is transmitted
+  // blanked the pane on every single move -- worse inside tmux, where a
+  // passthrough escape code reaches the terminal ahead of the pane's queued
+  // redraw. It is only released once the new placement has had time to land.
   const first = await makeImage("first.png", 100, 100);
   const second = await makeImage("second.png", 100, 100);
 
@@ -113,15 +127,47 @@ test("swapping the image retires the previous one", async () => {
   const ids = [...graphics.matchAll(/\x1b_Ga=T,U=1,i=(\d+)/g)].map((m) => m[1]);
   assert.equal(ids.length, 2, "second image was not transmitted");
   assert.notEqual(ids[0], ids[1], "reused an image id");
-  // The old image is released, but only after its replacement was sent, so the
-  // pane never blinks through empty.
-  const deleteIndex = graphics.indexOf(`\x1b_Ga=d,d=I,i=${firstId},q=2`);
-  const secondTransmitIndex = graphics.indexOf(`\x1b_Ga=T,U=1,i=${ids[1]}`);
-  assert.ok(deleteIndex > -1, "previous image was never deleted");
   assert.ok(
-    deleteIndex > secondTransmitIndex,
-    "deleted the old image before transmitting the new one",
+    !graphics.includes(`\x1b_Ga=d,d=I,i=${firstId},q=2`),
+    "freed the old image while its placeholders were still on screen",
   );
+
+  await flushRetire();
+  assert.ok(
+    graphicsWrites(frames).includes(`\x1b_Ga=d,d=I,i=${firstId},q=2`),
+    "the replaced image was never freed",
+  );
+
+  unmount();
+});
+
+test("nothing is decoded until the selection settles", async () => {
+  // Holding the down arrow changes `src` far faster than a PNG can be decoded
+  // and pushed to the terminal. Decoding each one in turn blocks the event loop
+  // for images already scrolled past, which is what made a fast scroll crawl.
+  // A wide debounce here so the window is unambiguous; the real one is short.
+  const src = await makeImage("settle.png", 100, 100);
+  const debounceMs = 400;
+
+  const { frames, unmount } = render(
+    <KittyPlaceholderImage
+      src={src}
+      maxColumns={20}
+      maxRows={10}
+      debounceMs={debounceMs}
+    />,
+  );
+
+  await new Promise((r) => setTimeout(r, debounceMs / 2));
+  assert.equal(
+    graphicsWrites(frames),
+    "",
+    "decoded before the selection had settled",
+  );
+
+  await new Promise((r) => setTimeout(r, debounceMs));
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: matching escape sequences
+  assert.match(graphicsWrites(frames), /\x1b_Ga=T,U=1,/);
 
   unmount();
 });

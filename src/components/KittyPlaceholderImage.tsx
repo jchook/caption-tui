@@ -22,6 +22,30 @@ import {
  * See `src/utils/kittyPlaceholder.ts` for the protocol details.
  */
 
+/**
+ * How long the preview has to sit still before we decode and transmit it.
+ *
+ * Holding the down arrow walks through images faster than a PNG can be decoded
+ * and pushed to the terminal, and every one of those transmits is wasted work
+ * on an image already scrolled past -- a Jimp decode blocking the event loop,
+ * kilobytes down the wire, and a placeholder grid rewritten mid-scroll. Waiting
+ * for the selection to settle keeps the image you *were* looking at on screen
+ * until there is a new one ready to replace it.
+ */
+export const TRANSMIT_DEBOUNCE_MS = 90;
+
+/**
+ * How long a replaced image is left alive in the terminal.
+ *
+ * Deleting it the instant its successor is transmitted was wrong: the
+ * placeholder cells on screen still refer to the old image until Ink paints the
+ * new ones, so the pane blinked through empty every single time -- and inside
+ * tmux, where passthrough escape codes reach the terminal ahead of the pane's
+ * queued redraw, that gap is wide enough to see. The old image costs a little
+ * terminal memory for half a second; that is a much better trade.
+ */
+export const RETIRE_GRACE_MS = 500;
+
 let nextImageId = 0;
 
 /**
@@ -51,6 +75,8 @@ interface KittyPlaceholderImageProps {
   cellHeight?: number;
   /** Wrap graphics escape codes for tmux passthrough. */
   insideTmux?: boolean;
+  /** Settle time before decoding. Overridable so tests can widen the window. */
+  debounceMs?: number;
 }
 
 export function KittyPlaceholderImage({
@@ -60,6 +86,7 @@ export function KittyPlaceholderImage({
   cellWidth,
   cellHeight,
   insideTmux = false,
+  debounceMs = TRANSMIT_DEBOUNCE_MS,
 }: KittyPlaceholderImageProps) {
   const { stdout } = useStdout();
   const [placement, setPlacement] = useState<Placement | null>(null);
@@ -75,11 +102,13 @@ export function KittyPlaceholderImage({
   // The image currently registered with the terminal. Tracked in a ref so the
   // unmount cleanup can delete it without re-running on every transmit.
   const activeIdRef = useRef<number | undefined>(undefined);
+  // Images that have been replaced but not yet freed. See RETIRE_GRACE_MS.
+  const retiredIdsRef = useRef<number[]>([]);
 
   useEffect(() => {
     let cancelled = false;
 
-    (async () => {
+    const transmit = async () => {
       try {
         const image = await Jimp.read(src);
         if (cancelled) return;
@@ -125,29 +154,51 @@ export function KittyPlaceholderImage({
           write(chunk);
         }
 
-        // Retire the previous image only once its replacement is on screen,
-        // so navigating between images doesn't blink through an empty pane.
+        // The previous image is queued for deletion rather than deleted here:
+        // its placeholder cells are what is on screen until Ink paints the new
+        // ones, and freeing it first is what made the preview blink out.
         const previous = activeIdRef.current;
         activeIdRef.current = id;
-        if (previous !== undefined) write(buildDelete(previous));
+        if (previous !== undefined) retiredIdsRef.current.push(previous);
 
         setFailed(false);
         setPlacement({ id, columns: grid.columns, rows: grid.rows });
       } catch {
         if (!cancelled) setFailed(true);
       }
-    })();
+    };
+
+    const timer = setTimeout(() => {
+      void transmit();
+    }, debounceMs);
 
     return () => {
       cancelled = true;
+      clearTimeout(timer);
     };
-  }, [src, maxColumns, maxRows, cellWidth, cellHeight, write]);
+  }, [src, maxColumns, maxRows, cellWidth, cellHeight, write, debounceMs]);
+
+  // Free the images the new placement replaced, once it has had time to reach
+  // the screen. Each new placement restarts the clock, so a fast scroll frees
+  // everything in one go after it stops rather than mid-flight.
+  useEffect(() => {
+    if (placement === null || retiredIdsRef.current.length === 0) return;
+
+    const timer = setTimeout(() => {
+      for (const id of retiredIdsRef.current) write(buildDelete(id));
+      retiredIdsRef.current = [];
+    }, RETIRE_GRACE_MS);
+
+    return () => clearTimeout(timer);
+  }, [placement, write]);
 
   // Free the terminal's copy of the image when the preview goes away. Kitty
   // holds transmitted images until told otherwise, so skipping this would leak
   // one image per preview for the lifetime of the terminal.
   useEffect(
     () => () => {
+      for (const id of retiredIdsRef.current) write(buildDelete(id));
+      retiredIdsRef.current = [];
       if (activeIdRef.current !== undefined) {
         write(buildDelete(activeIdRef.current));
         activeIdRef.current = undefined;
