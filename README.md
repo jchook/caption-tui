@@ -1,14 +1,16 @@
 # caption-tui
 
-A keyboard-driven TUI for captioning image datasets — tag a whole folder from the terminal, without opening files one at a time.
+A keyboard-driven TUI for captioning image datasets.
 
 ![Ink](https://img.shields.io/badge/built%20with-Ink-blue)
 ![Node](https://img.shields.io/badge/runtime-Node-339933)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
+![caption-tui demo](docs/demo.gif)
+
 ## Why?
 
-You've got 500 images, each needing a `.txt` of tags. Instead of opening every file by hand, do the whole folder from one view:
+Speed up the workflow for manually captioning image datasets.
 
 - Inline image previews (Kitty, iTerm2, Sixel, or fallback)
 - Autocomplete from your existing tags
@@ -23,18 +25,15 @@ Requires [Node](https://nodejs.org) >= 22.
 npm i -g caption-tui     # or: bun add -g caption-tui
 ```
 
-That's the whole install — it ships as compiled JavaScript and runs on plain
-Node.
-
 ## Usage
 
-Point it at a folder of images:
+Open a folder of images:
 
 ```bash
 caption-tui ./my-dataset
 ```
 
-Your folder should look like:
+Your folder will look like:
 ```
 my-dataset/
 ├── image001.png
@@ -47,6 +46,7 @@ my-dataset/
 ## Controls
 
 ### List Mode
+
 | Key | Action |
 |-----|--------|
 | `↑` `↓` or `j` `k` | Navigate |
@@ -58,6 +58,7 @@ my-dataset/
 | `q` | Quit |
 
 ### Edit Mode
+
 | Key | Action |
 |-----|--------|
 | `Enter` / `Tab` | Accept suggestion or add tag |
@@ -65,6 +66,7 @@ my-dataset/
 | `→` | Accept inline suggestion |
 | `↑` `↓` | Previous/next image |
 | `Esc` | Close editor (auto-saves) |
+| `Ctrl-g` | Open the caption in `$EDITOR` |
 
 ## Features
 
@@ -72,23 +74,26 @@ my-dataset/
 
 **Smart autocomplete** — Learns from your existing tags. Type `por` and hit Tab to complete `portrait`.
 
-**Inline image preview** — See what you're tagging without leaving the terminal. Works best in Kitty.
+**Inline image preview** — See what you're tagging without leaving the terminal. Supports sixel.
 
 **Auto-save** — Changes save immediately. No "did I save that?" anxiety.
 
 ## Caption Format
 
-Tags are comma-separated with spaces, the standard format for training:
+By default, tags are comma-separated with spaces, the standard format for training:
 
 ```
 person, portrait, outdoors, natural lighting, looking at viewer
 ```
+
+The tool also supports natural language captioning via `-n`.
 
 ## Tips
 
 - Start with broad tags, get specific as you go
 - Use consistent terminology across your dataset
 - The autocomplete gets better as you add more tags
+
 
 ## License
 

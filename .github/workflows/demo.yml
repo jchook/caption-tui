@@ -1,0 +1,83 @@
+name: Demo GIF
+
+# Deliberately not on every push. Re-recording produces a byte-different GIF
+# every time even when nothing changed (frame timing jitter), so an unconditional
+# job would commit a fresh ~500KB blob on each run and bloat the history.
+on:
+  push:
+    branches: [main]
+    paths:
+      - docs/demo.tape
+      - scripts/fetch-demo-dataset.ts
+      - .github/workflows/demo.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  record:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+
+      # ~7MB of JPEGs from Hugging Face. Keyed on the generator because the
+      # dataset it produces is fully determined by that script.
+      - uses: actions/cache@v4
+        with:
+          path: .demo/source
+          key: demo-dataset-${{ hashFiles('scripts/fetch-demo-dataset.ts') }}
+
+      - name: Fetch dataset if not cached
+        run: |
+          if [ ! -d .demo/source ] || [ -z "$(ls -A .demo/source 2>/dev/null)" ]; then
+            bun scripts/fetch-demo-dataset.ts
+          fi
+
+      # The tape types a bare `caption-tui`, so put one on PATH. Same shim the
+      # justfile makes; no global install, no bun link.
+      - name: Shim caption-tui onto PATH
+        run: |
+          mkdir -p .demo/bin
+          printf '#!/bin/sh\nexec %s %s/dist/index.js "$@"\n' \
+            "$(command -v node)" "$PWD" > .demo/bin/caption-tui
+          chmod +x .demo/bin/caption-tui
+          echo "$PWD/.demo/bin" >> "$GITHUB_PATH"
+
+      # caption-tui writes captions as the tape types them, so record against a
+      # copy -- see docs/demo.md.
+      - name: Stage a throwaway copy of the dataset
+        run: |
+          rm -rf .demo/simpsons
+          cp -r .demo/source .demo/simpsons
+
+      # install-fonts pulls JetBrains Mono Nerd Font, which docs/demo.tape asks
+      # for by name; without it VHS silently substitutes and the layout shifts.
+      - uses: charmbracelet/vhs-action@v2
+        with:
+          path: docs/demo.tape
+          install-fonts: true
+
+      - name: Optimise
+        run: |
+          sudo apt-get update && sudo apt-get install -y gifsicle
+          before=$(stat -c%s docs/demo.gif)
+          gifsicle -O3 --lossy=60 --colors 96 -o docs/demo.gif.tmp docs/demo.gif
+          mv docs/demo.gif.tmp docs/demo.gif
+          echo "$(numfmt --to=iec $before) -> $(numfmt --to=iec $(stat -c%s docs/demo.gif))"
+
+      - uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "docs: regenerate demo GIF"
+          file_pattern: docs/demo.gif

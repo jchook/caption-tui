@@ -52,6 +52,7 @@ bun test                  # the suite, under Bun
 bun run test:node         # the same suite under node --test
 bun run build             # compile to dist/ (node-targeted, what ships)
 bun run check             # biome format + lint, writing fixes
+just demo                 # re-record docs/demo.gif (see docs/demo.md)
 ```
 
 Local global binary — `caption-tui` runs the compiled `dist/`, so link it and keep
@@ -355,7 +356,17 @@ detach/reattach to a different terminal.
 bun scripts/kitty-smoke-test.ts [image]        # bypasses Ink entirely
 CAPTION_TUI_DEBUG=1 caption-tui <dataset>      # logs probe + chosen renderer
 CAPTION_TUI_FULL_REPAINT=1 caption-tui <ds>    # whole-frame repaints, not incremental
+CAPTION_TUI_PROTOCOL=halfBlock caption-tui <ds> # skip detection, name the renderer
 ```
+
+`CAPTION_TUI_PROTOCOL` takes any of ink-picture's protocol names -- `halfBlock`,
+`braille`, `ascii`, `sixel`, `iterm2`, `kitty` -- and forces the ink-picture path
+with that renderer, bypassing the probe (an unrecognised value is ignored). It
+exists because a terminal can advertise a protocol it does not draw: xterm.js --
+what VS Code's integrated terminal, Hyper and ttyd are built on -- always reports
+`4` (sixel) in its primary device attributes. The probe believes it, quite
+correctly, ink-picture picks sixel, and the pane sits on "Loading..." for ever.
+`docs/demo.tape` sets it for exactly this reason.
 
 The smoke test prints the placeholder grid with plain `console.log`, so if it
 works but the TUI doesn't, the bug is in the Ink layer, not the protocol.
