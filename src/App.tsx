@@ -1,6 +1,10 @@
 import { appendFileSync } from "node:fs";
 import { Box, Text, useApp, useInput } from "ink";
-import Image, { InkPictureProvider, type TerminalInfo } from "ink-picture";
+import Image, {
+  type ImageProtocolName,
+  InkPictureProvider,
+  type TerminalInfo,
+} from "ink-picture";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CaptionEditor } from "./components/CaptionEditor.js";
 import {
@@ -47,6 +51,16 @@ interface AppProps {
   graphics?: TerminalProbeResult;
 }
 
+/** Protocol names ink-picture exposes; anything else in the env var is ignored. */
+const FORCED_PROTOCOLS = new Set<string>([
+  "ascii",
+  "braille",
+  "halfBlock",
+  "iterm2",
+  "kitty",
+  "sixel",
+]);
+
 export function App({ datasetPath, mode = "tags", graphics }: AppProps) {
   const isNatural = mode === "natural";
   const { exit } = useApp();
@@ -82,12 +96,27 @@ export function App({ datasetPath, mode = "tags", graphics }: AppProps) {
     setEditingIndex(index);
   }, []);
 
+  // Escape hatch for terminals that answer a capability query with a protocol
+  // they do not actually draw. xterm.js -- what VS Code's integrated terminal,
+  // ttyd and Hyper are built on -- always reports `4` (sixel) in its primary
+  // device attributes, so the probe correctly believes it and ink-picture picks
+  // a renderer whose output the terminal discards: the pane sits on
+  // "Loading..." forever. Naming a protocol here bypasses detection entirely.
+  //   CAPTION_TUI_PROTOCOL=halfBlock|braille|ascii|sixel|iterm2|kitty
+  const forcedProtocol = FORCED_PROTOCOLS.has(
+    process.env.CAPTION_TUI_PROTOCOL ?? "",
+  )
+    ? (process.env.CAPTION_TUI_PROTOCOL as ImageProtocolName)
+    : undefined;
+
   // With kitty available we render the preview ourselves via Unicode
   // placeholders, which are plain text and therefore need none of the repaint
   // nudging, visibility overriding or layout padding that direct-placement
   // graphics did. Everything else falls through to ink-picture's text-based
   // protocols (half-block/braille/ascii), which have always worked fine.
-  const useKittyPlaceholders = graphics?.supportsKittyGraphics === true;
+  // A forced protocol is a request for ink-picture, so it wins here too.
+  const useKittyPlaceholders =
+    forcedProtocol === undefined && graphics?.supportsKittyGraphics === true;
 
   // ink-picture only sees the fallback path, so hand it just what it needs.
   // The measured cell size is spread in only when we actually have it:
@@ -429,6 +458,7 @@ export function App({ datasetPath, mode = "tags", graphics }: AppProps) {
               width={columns}
               height={previewHeight}
               objectFit="contain"
+              protocol={forcedProtocol}
             />
           )}
         </Box>
